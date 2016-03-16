@@ -1,0 +1,3 @@
+C:/dev/my/build/CMakeFiles/ALL_BUILD.dir
+C:/dev/my/build/CMakeFiles/ZERO_CHECK.dir
+C:/dev/my/build/CMakeFiles/Capture_Video.dir
