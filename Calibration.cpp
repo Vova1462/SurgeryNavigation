@@ -1,4 +1,6 @@
 #include<Calibration.h>
 
+void Calibration::SCalibration(Customozation *cust)
+{
 
-void Calibration::StereoCalibration(Customozation* cust)
+}
