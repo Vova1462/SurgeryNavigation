@@ -85,7 +85,7 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>C:\dev\OpenCV\install\include;C:\dev\OpenCV\install\include\opencv;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\dev\OpenCV\install\include;C:\dev\OpenCV\install\include\opencv;C:\dev\my\build;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AssemblerListingLocation>Debug/</AssemblerListingLocation>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <CompileAs>CompileAsCpp</CompileAs>
@@ -320,11 +320,17 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="C:\dev\my\OpenCVexample\Capture_Video.cpp" />
+    <ClCompile Include="Calibration.cpp" />
+    <ClCompile Include="Customozation.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="C:/dev/my/build/ZERO_CHECK.vcxproj">
       <Project>457BD8CE-121B-46CA-A316-C0AFDF656032</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Calibration.h" />
+    <ClInclude Include="Customozation.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
