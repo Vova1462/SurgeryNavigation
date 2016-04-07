@@ -28,6 +28,7 @@ void Calibration::SCalibration(Customozation *cust)
 	//Создание окон для отображения изображения получаемого с камер
 	cvNamedWindow("Camera 1", 1);
 	cvNamedWindow("Camera 2", 1);
+
 	while ((successes1>cycle)||(successes2>cycle))
 	{
 		//Ожидание 20 кадров доски с разных ракурсов для захвата изображения
@@ -123,6 +124,15 @@ void Calibration::SCalibration(Customozation *cust)
 		//Ожидание нажатия клавишы для завершения
 		if (cvWaitKey(15) == 27) break;
 	}
+
+	//Калибровка камеры
+	cvCalibrateCamera2(
+		object_points1,
+		image_points1,
+		point_counts1,
+		cvGetSize(frame1),
+		
+		);
 
 	//Завершение работы камер
 	cust->stereoGrabberStopCam();
