@@ -126,13 +126,13 @@ void Calibration::SCalibration(Customozation *cust)
 	}
 
 	//Калибровка камеры
-	cvCalibrateCamera2(
-		object_points1,
-		image_points1,
-		point_counts1,
-		cvGetSize(frame1),
+	//cvCalibrateCamera2(
+	//	object_points1,
+	//	image_points1,
+	//	point_counts1,
+	//	cvGetSize(frame1),
 		
-		);
+	//	);
 
 	//Завершение работы камер
 	cust->stereoGrabberStopCam();
