@@ -4,10 +4,10 @@
     <ClCompile Include="C:\dev\my\OpenCVexample\Capture_Video.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Customozation.cpp">
+    <ClCompile Include="Calibration.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Calibration.cpp">
+    <ClCompile Include="Source\Customozation.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
@@ -23,10 +23,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Customozation.h">
+    <ClInclude Include="Source\Calibration.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Calibration.h">
+    <ClInclude Include="Source\Customozation.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
