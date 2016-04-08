@@ -6,7 +6,9 @@
 #include<opencv2\videoio.hpp>
 #include <iostream>
 #include <vector>
+#include<cxcore.h>
 
+using namespace std;
 #define WIDTH 800
 #define HEIGHT 600
 
@@ -22,18 +24,20 @@ CvCapture *camera1 = NULL, *camera2 = NULL;
 
 
 int main(int argc, char **argv) {
-	
+	SCalibration();
 	return 0;
 }
 
 
 void  stereoGrabberInitFrames()
 {
-	camera1 = cvCaptureFromCAM(2);
+	
+	camera1 = cvCreateCameraCapture(0);
 	assert(camera1 != NULL);
-	cvWaitKey(100);
 
-	camera2 = cvCaptureFromCAM(1);
+	_sleep(1000);
+
+	camera2 = cvCreateCameraCapture(0);
 	assert(camera2 != NULL); // Inicializaciya kamer
 }
 
@@ -51,7 +55,7 @@ void stereoGrabberStopCam()
 
 void SCalibration()
 {
-	int nx = 10, ny = 7, cycle = 40, result1 = 0, result2 = 0; //Колличество углов по осям х и у, колличество циклов, результаты поиска углов
+	int nx = 10, ny = 7, boards_needed = 40, result1 = 0, result2 = 0; //Колличество углов по осям х и у, колличество циклов, результаты поиска углов
 	int n = nx*ny; //Колличество углов на шахмтной доске
 	int successes1 = 0, successes2 = 0;
 	int frame = 0, corners_count1 = 0, corners_count2 = 0, step = 0;
@@ -60,25 +64,25 @@ void SCalibration()
 	vector<CvPoint2D32f> found_points_coords2(n);//Массив координат точек найденных на шахматной доске
 
 	//Запуск веб-камер
-	cust->stereoGrabberGrabFrames();
-	cust->stereoGrabberInitFrames();
-	IplImage *frame1 = cust->imageLeft;
-	IplImage *frame2 = cust->imageRight; //Захват изображения с 1 и 2 камеры
+	stereoGrabberGrabFrames();
+	stereoGrabberInitFrames();
+	IplImage *frame1 = imageLeft;
+	IplImage *frame2 = imageRight; //Захват изображения с 1 и 2 камеры
 	IplImage *gr_frame1, *gr_frame2;
 
 	//Выделение памяти под хранилища
 
-	CvMat* image_points1 = cvCreateMat(cycle*n, 2, CV_32FC1);
-	CvMat* image_points2 = cvCreateMat(cycle*n, 2, CV_32FC1);
-	CvMat* object_points1 = cvCreateMat(cycle*n, 3, CV_32FC1);
-	CvMat* object_points2 = cvCreateMat(cycle*n, 3, CV_32FC1);
-	CvMat* point_counts1 = cvCreateMat(cycle, 1, CV_32SC1);
-	CvMat* point_counts2 = cvCreateMat(cycle, 1, CV_32SC1);
+	CvMat* image_points1 = cvCreateMat(boards_needed*n, 2, CV_32FC1);
+	CvMat* image_points2 = cvCreateMat(boards_needed*n, 2, CV_32FC1);
+	CvMat* object_points1 = cvCreateMat(boards_needed*n, 3, CV_32FC1);
+	CvMat* object_points2 = cvCreateMat(boards_needed*n, 3, CV_32FC1);
+	CvMat* point_counts1 = cvCreateMat(boards_needed, 1, CV_32SC1);
+	CvMat* point_counts2 = cvCreateMat(boards_needed, 1, CV_32SC1);
 	//Создание окон для отображения изображения получаемого с камер
 	cvNamedWindow("Camera 1", 1);
 	cvNamedWindow("Camera 2", 1);
 
-	while ((successes1>cycle) || (successes2>cycle))
+	while ((successes1<boards_needed) || (successes2<boards_needed))
 	{
 		//Ожидание 20 кадров доски с разных ракурсов для захвата изображения
 		if (frame++ % 20 == 0)
@@ -164,10 +168,10 @@ void SCalibration()
 		}
 
 		//Съемка следущей фотографии
-		cust->stereoGrabberGrabFrames();
-		frame1 = cust->imageLeft;
+		stereoGrabberGrabFrames();
+		frame1 = imageLeft;
 		cvShowImage("Camera 1", frame1);
-		frame2 = cust->imageRight;
+		frame2 = imageRight;
 		cvShowImage("Camera 1", frame2);
 
 		//Ожидание нажатия клавишы для завершения
@@ -184,6 +188,6 @@ void SCalibration()
 	//	);
 
 	//Завершение работы камер
-	cust->stereoGrabberStopCam();
+	stereoGrabberStopCam();
 
 }
