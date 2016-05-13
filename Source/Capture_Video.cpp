@@ -163,24 +163,24 @@ int main(int argc, char **argv)
 	CvCapture *camera1, *camera2;
 	// получаем любую подключённую камеру
 	
-	camera1 = cvCreateCameraCapture(0); // или Ваш cvCaptureFromCAM( 0 );
-	camera2 = cvCreateCameraCapture(0); // или Ваш cvCaptureFromCAM( 0 );
+	camera1 = cvCaptureFromCAM(0); // или Ваш cvCaptureFromCAM( 0 );
+	//camera2 = cvCaptureFromCAM(-1); // или Ваш cvCaptureFromCAM( 0 );
 
-	SCalibration(camera1, camera2);
+	//SCalibration(camera1, camera2);
 
 	IplImage* frame1 = 0;
-	IplImage* frame2 = 0;
+	//IplImage* frame2 = 0;
 
 	cvNamedWindow("capture1", CV_WINDOW_AUTOSIZE);
-	cvNamedWindow("capture2", CV_WINDOW_AUTOSIZE);
+	//cvNamedWindow("capture2", CV_WINDOW_AUTOSIZE);
 	while (true)
 	{
 	/*	 получаем кадр*/
 		frame1 = cvQueryFrame(camera1);
-		frame2 = cvQueryFrame(camera2);
+	//	frame2 = cvQueryFrame(camera2);
 		/* показываем*/
 		cvShowImage("capture1", frame1);
-		cvShowImage("capture2", frame2);
+		//cvShowImage("capture2", frame2);
 		char c = cvWaitKey(33);
 		if (c == 27) { // нажата ESC
 			break;
@@ -189,7 +189,7 @@ int main(int argc, char **argv)
 
 	 //освобождаем ресурсы
 	cvReleaseCapture(&camera1);
-	cvReleaseCapture(&camera2);
+	//cvReleaseCapture(&camera2);
 
 
 	return 0;
