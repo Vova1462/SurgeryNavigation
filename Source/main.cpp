@@ -30,10 +30,9 @@ static bool readStringList(const string& filename, vector<string>& l)
 
 static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 {
-	setlocale(LC_ALL, "rus");
 	char a;
 	string str="";
-	int w, h, pat;
+	int w, h;
 	float squareSize = 1.0;
 	Size boardSize;
 	bool displayCorners = false, useCalibrated = true, showRectified = true;
@@ -306,10 +305,20 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		P1 = cameraMatrix[0];
 		P2 = cameraMatrix[1];
 	}
-
+	Mat mx1colib(imageSize.height,imageSize.width,CV_32F);
 	//Precompute maps for cv::remap()
-	initUndistortRectifyMap(cameraMatrix[0], distCoeffs[0], R1, P1, imageSize, CV_16SC2, rmap[0][0], rmap[0][1]);
-	initUndistortRectifyMap(cameraMatrix[1], distCoeffs[1], R2, P2, imageSize, CV_16SC2, rmap[1][0], rmap[1][1]);
+	initUndistortRectifyMap(cameraMatrix[0], distCoeffs[0], R1, P1, imageSize, CV_32F, mx1colib, rmap[0][1]);
+	initUndistortRectifyMap(cameraMatrix[0], distCoeffs[0], R1, P1, imageSize, CV_32F, rmap[0][0], rmap[0][1]);
+	initUndistortRectifyMap(cameraMatrix[1], distCoeffs[1], R2, P2, imageSize, CV_32F, rmap[1][0], rmap[1][1]);
+	
+	
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml",FileStorage::WRITE);
+	if (fs.isOpened())
+	{
+		fs << "mx1" << mx1colib;
+		fs.release();
+	}
+	
 
 	Mat canvas;
 	double sf;
@@ -359,10 +368,29 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 }
 
 
+//static void StereoMatching()
+//{
+//	Ptr<StereoBM> bm = StereoBM::create(16, 6);
+//	bm->setROI1();
+//	bm->setROI2();
+//	bm->setPreFilterCap();
+//	bm->setBlockSize();
+//	bm->setMinDisparity();
+//	bm->setNumDisparities();
+//	bm->setTextureThreshold();
+//	bm->setUniquenessRatio();
+//	bm->setSpeckleWindowSize();
+//	bm->setSpeckleRange();
+//	bm->setDisp12MaxDiff();
+//}
+
+
+
 int main()
 {
 	char a;
-	
+	Mat frame1, frame2,gframe1,gframe2;
+
 	VideoCapture cap1(-1);
 	if (!cap1.isOpened())
 		return -1;
@@ -381,34 +409,35 @@ int main()
 	
 	namedWindow("capture1", 1);
 	namedWindow("capture2", 1);
+	namedWindow("Options", 1);
 	
 	vector<Vec3f> circles;
 
-
+	int thresholdofCanny=863, acumulatorthrehold=24;
 	for (;;)
 	{
-		Mat frame1(480,640,CV_8UC1), frame2;
 		cap1 >> frame1;
 		cap2 >> frame2;
+		gframe1.create(480, 640, CV_8UC1);
 		
-		imshow("capture1", frame1);
-		imshow("capture2", frame2);
-		Mat gframe1, gframe2;
+		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 
-		frame1 *= 1. / 255;
-		gframe1.create(480,640, CV_8UC1);
+		createTrackbar("Threshold", "Options", &thresholdofCanny, 1000, 0);
+		createTrackbar("Acumulatorthreshold", "Options", &acumulatorthrehold, 45, 0);
 
-		cvtColor(frame1, gframe1, COLOR_GRAY2BGR);
-		
-		HoughCircles(frame1,circles,HOUGH_GRADIENT,
-			1,10,300,30,1,100);
+		HoughCircles(gframe1,circles,HOUGH_GRADIENT,
+			1,10, getTrackbarPos("Threshold", "Options"), getTrackbarPos("Acumulatorthreshold", "Options"),1,80);
 		for (size_t i = 0; i < circles.size(); i++)
 		{
 			Vec3i c = circles[i];
-			circle(gframe1, Point(c[0], c[1]), c[2], Scalar(0, 0, 255), 3, LINE_AA);
-			circle(gframe2, Point(c[0], c[1]), 2, Scalar(0, 255, 0), 3, LINE_AA);
+			circle(frame1, Point(c[0], c[1]), c[2], Scalar(0, 0, 255), 3, LINE_AA);
+			circle(frame1, Point(c[0], c[1]), 2, Scalar(0, 255, 0), 3, LINE_AA);
 		}
-		imshow("detected circles", gframe1);
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
+		
+		char c = waitKey(100);
+		if (c == 27) break;
 	}
 	return 0;
 }
