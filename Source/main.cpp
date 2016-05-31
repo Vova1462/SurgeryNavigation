@@ -1,8 +1,4 @@
 #include<cv.hpp>
-#include<opencv2\highgui.hpp>
-#include<opencv2\calib3d.hpp>
-#include<opencv2\opencv.hpp>
-#include<opencv2\videoio.hpp>
 #include <string>
 #include <iostream>
 #include <iterator> 
@@ -12,7 +8,7 @@
 using namespace std;
 using namespace cv;
 
-static bool readStringList(const string& filename, vector<string>& l)
+static bool ReadStringList(const string& filename, vector<string>& l)
 {
 	l.resize(0);
 	FileStorage fs(filename, FileStorage::READ);
@@ -79,7 +75,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\image_list.xml";
 	}
 	vector<string> imagelist;
-	bool ok = readStringList(str, imagelist);
+	bool ok = ReadStringList(str, imagelist);
 	if (!ok || imagelist.empty())
 	{
 		cout << "can not open " << str << " or the string list is empty" << endl;
@@ -372,16 +368,36 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	}
 }
 
+static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *dispmap, Rect roi1, Rect roi2)
+{
+	bm->setROI1(roi1);
+	bm->setROI2(roi2);
+	if (getTrackbarPos("setPreFilterCap", "Parametars")>0)
+		bm->setPreFilterCap(getTrackbarPos("setPreFilterCap", "Parametars"));
+	if (getTrackbarPos("setBlockSize", "Parametars") % 2 != 0 && getTrackbarPos("setBlockSize", "Parametars") > 3)
+		bm->setBlockSize(getTrackbarPos("setBlockSize", "Parametars"));
+	bm->setMinDisparity(0);
+	if (getTrackbarPos("setTextureThreshold", "Parametars") > 0)
+		bm->setNumDisparities(getTrackbarPos("setTextureThreshold", "Parametars") * 16);
+	bm->setTextureThreshold(getTrackbarPos("setNumDisparities", "Parametars"));
+	bm->setUniquenessRatio(getTrackbarPos("setUniquenessRatio", "Parametars"));
+	bm->setSpeckleWindowSize(100);
+	bm->setSpeckleRange(32);
+	bm->setDisp12MaxDiff(1);
+	bm->compute(capture1, capture2, *dispmap);
+}
 
-static void StereoMatching(int iteration, Mat capture1,Mat capture2, Rect roi1, Rect roi2)
+static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, Rect roi2*/)
 {
 	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, mx1, mx2, my1, my2;
-	
-	int prefiltercap = 31, blocksize = 9, texturethreshold = 16, numdisparity = 16, uniquenessratio = 15;
-	namedWindow("Parametars", 1);
-	FileStorage fs;
 	Size imgsize = capture1.size();
-	Mat disp(capture1.rows, capture1.cols,CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U),img1rect,img2rect;
+	Mat disp(capture1.rows, capture1.cols, CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U), img1rect, img2rect;
+	Rect roi1, roi2;
+
+	int prefiltercap = 31, blocksize = 9, texturethreshold = 16, numdisparity = 16, uniquenessratio = 15;
+	
+		
+	FileStorage fs;
 	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml",FileStorage::READ);
 	if (fs.isOpened())
 	{
@@ -401,13 +417,6 @@ static void StereoMatching(int iteration, Mat capture1,Mat capture2, Rect roi1, 
 		fs["D1"] >> D1;
 		fs["D2"] >> D2;
 	}
-	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, 0,0);
-	createTrackbar("setPreFilterCap", "Parametars", &prefiltercap, 63);
-	createTrackbar("setBlockSize", "Parametars", &blocksize, 100);
-	createTrackbar("setTextureThreshold", "Parametars", &texturethreshold, 70);
-	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
-	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 100);
-
 	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
@@ -417,44 +426,34 @@ static void StereoMatching(int iteration, Mat capture1,Mat capture2, Rect roi1, 
 		fs["my2"] >> my2;
 	}
 	
+
+	namedWindow("Parametars", 1);
+	createTrackbar("setPreFilterCap", "Parametars", &prefiltercap, 63);
+	createTrackbar("setBlockSize", "Parametars", &blocksize, 100);
+	createTrackbar("setTextureThreshold", "Parametars", &texturethreshold, 70);
+	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
+	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 100);
+	
+	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
+	
 	remap(capture1, img1rect, mx1, my1, INTER_LINEAR);
 	remap(capture2, img2rect, mx2, my2, INTER_LINEAR);
 
 	capture1 = img1rect;
 	capture2 = img2rect;
+
 	Ptr<StereoBM> bm = StereoBM::create(16, 9);
 	if (iteration == 0)
 	for (;;)
 	{
-		
-		bm->setROI1(roi1);
-		bm->setROI2(roi2);
-		if (getTrackbarPos("setPreFilterCap", "Parametars")>0)
-		bm->setPreFilterCap(getTrackbarPos("setPreFilterCap", "Parametars"));
-		if (getTrackbarPos("setBlockSize", "Parametars") % 2 != 0 && getTrackbarPos("setBlockSize", "Parametars") > 3)
-			bm->setBlockSize(getTrackbarPos("setBlockSize", "Parametars"));
-		bm->setMinDisparity(0);
-		if (getTrackbarPos("setTextureThreshold", "Parametars") > 0)
-			bm->setNumDisparities(getTrackbarPos("setTextureThreshold", "Parametars")*16);
-		bm->setTextureThreshold(getTrackbarPos("setNumDisparities", "Parametars"));
-		bm->setUniquenessRatio(getTrackbarPos("setUniquenessRatio", "Parametars"));
-		bm->setSpeckleWindowSize(100);
-		bm->setSpeckleRange(32);
-		bm->setDisp12MaxDiff(1);
-		bm->compute(capture1, capture2, disp);
+		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
 		disp.convertTo(vdisp, CV_8U);
+		
 		imshow("DisparityMap", vdisp);
 		char c = waitKey(100);
 		if (c == 27) 
 		{
-			fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::WRITE);
-			if (fs.isOpened())
-			{
-				fs << "PreFilterCap" << getTrackbarPos("setPreFilterCap", "Parametars") << "BlockSize" << getTrackbarPos("setBlockSize", "Parametars");
-				fs << "TextureThreshold" << getTrackbarPos("setTextureThreshold", "Parametars") << "NumDisparities" << getTrackbarPos("setNumDisparities", "Parametars");
-				fs << "UniquenessRatio" << getTrackbarPos("setUniquenessRatio", "Parametars");
-			}
 			break;
 		}
 			
@@ -490,7 +489,7 @@ static void StereoMatching(int iteration, Mat capture1,Mat capture2, Rect roi1, 
 		imshow("DisparityMap", vdisp);
 	}
 }
-static void FindingCircles(Mat capture1, Mat templ)
+static void FindCircles(Mat capture1, Mat templ)
 {
 	
 		Mat result;
@@ -505,7 +504,7 @@ int main()
 {
 	char a;
 	Mat frame1, frame2,gframe1,gframe2,result;
-	/*Rect roi1, roi2;*/
+	
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
 		return -1;
@@ -529,10 +528,9 @@ int main()
 	int t=0;
 	string filename;
 	
-	
-
 	const string prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Template\\";
 	const string postfix = ".png";
+	
 	Mat templ;
 	namedWindow("templ");
 	for (;;)
@@ -545,15 +543,16 @@ int main()
 
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
+	
 		for (int i = 1;i <= 5;i++) {
 			templ = imread(prefix + to_string(i) + postfix, 0);
-			FindingCircles(gframe1, templ);
+			FindCircles(gframe1, templ);
 		}
 
 		imshow("capture1", frame1);
 		imshow("capture2", frame2);
 		
-		t++;
+
 		char c = waitKey(100);
 		if (c == 27) break;
 	}
