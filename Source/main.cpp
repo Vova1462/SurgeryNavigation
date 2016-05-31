@@ -1,4 +1,7 @@
 #include<cv.hpp>
+#include<opencv2\highgui.hpp>
+#include<opencv2\calib3d.hpp>
+#include<opencv2\opencv.hpp>
 #include<opencv2\videoio.hpp>
 #include <string>
 #include <iostream>
@@ -47,10 +50,10 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		namedWindow("capture1", 1);
 		namedWindow("capture2", 1);
 		int capture_number = 0;
-
+		Mat frame1, frame2;
 		for (;;)
 		{
-			Mat frame1, frame2;
+			
 			camera1 >> frame1;
 			camera2 >> frame2;
 
@@ -60,8 +63,8 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 			compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
 			compression_params.push_back(9);
 			char c = waitKey(33);
-			const string prefix_left("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\left");
-			const string prefix_right("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\right");
+			const string prefix_left("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration1\\left");
+			const string prefix_right("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration1\\right");
 			const string postfix(".png");
 			if (c == 13)
 			{
@@ -370,16 +373,15 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 }
 
 
-static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, Rect roi2*/)
+static void StereoMatching(int iteration, Mat capture1,Mat capture2, Rect roi1, Rect roi2)
 {
 	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, mx1, mx2, my1, my2;
-	Rect roi1, roi2;
+	
 	int prefiltercap = 31, blocksize = 9, texturethreshold = 16, numdisparity = 16, uniquenessratio = 15;
-
+	namedWindow("Parametars", 1);
+	FileStorage fs;
 	Size imgsize = capture1.size();
 	Mat disp(capture1.rows, capture1.cols,CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U),img1rect,img2rect;
-
-	FileStorage fs;
 	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml",FileStorage::READ);
 	if (fs.isOpened())
 	{
@@ -399,7 +401,13 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["D1"] >> D1;
 		fs["D2"] >> D2;
 	}
-	//поставить коментарий
+	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, 0,0);
+	createTrackbar("setPreFilterCap", "Parametars", &prefiltercap, 63);
+	createTrackbar("setBlockSize", "Parametars", &blocksize, 100);
+	createTrackbar("setTextureThreshold", "Parametars", &texturethreshold, 70);
+	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
+	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 100);
+
 	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
@@ -408,70 +416,48 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["mx2"] >> mx2;
 		fs["my2"] >> my2;
 	}
-
-
-	namedWindow("Parametars", 1);
-	createTrackbar("setPreFilterCap", "Parametars", &prefiltercap, 63);
-	createTrackbar("setBlockSize", "Parametars", &blocksize, 100);
-	createTrackbar("setTextureThreshold", "Parametars", &texturethreshold, 20);
-	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
-	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 20);
-
-	//¬ычисление характеристик дл€ дальнейшего изображений
-	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
 	
-	//ѕерестраивает изображени€ дл€ исправлени€ оптических искажений 
 	remap(capture1, img1rect, mx1, my1, INTER_LINEAR);
 	remap(capture2, img2rect, mx2, my2, INTER_LINEAR);
 
 	capture1 = img1rect;
 	capture2 = img2rect;
-
-	Ptr<StereoBM> bm = StereoBM::create(64, 21);
-	//Ћогические отступы и добавить коментарии
+	Ptr<StereoBM> bm = StereoBM::create(16, 9);
 	if (iteration == 0)
+	for (;;)
 	{
-		imshow("capture1", capture1);
-		imshow("capture2", capture2);
-		for (;;)
+		
+		bm->setROI1(roi1);
+		bm->setROI2(roi2);
+		if (getTrackbarPos("setPreFilterCap", "Parametars")>0)
+		bm->setPreFilterCap(getTrackbarPos("setPreFilterCap", "Parametars"));
+		if (getTrackbarPos("setBlockSize", "Parametars") % 2 != 0 && getTrackbarPos("setBlockSize", "Parametars") > 3)
+			bm->setBlockSize(getTrackbarPos("setBlockSize", "Parametars"));
+		bm->setMinDisparity(0);
+		if (getTrackbarPos("setTextureThreshold", "Parametars") > 0)
+			bm->setNumDisparities(getTrackbarPos("setTextureThreshold", "Parametars")*16);
+		bm->setTextureThreshold(getTrackbarPos("setNumDisparities", "Parametars"));
+		bm->setUniquenessRatio(getTrackbarPos("setUniquenessRatio", "Parametars"));
+		bm->setSpeckleWindowSize(100);
+		bm->setSpeckleRange(32);
+		bm->setDisp12MaxDiff(1);
+		bm->compute(capture1, capture2, disp);
+		normalize(disp, vdisp, 0, 1, CV_MINMAX);
+		disp.convertTo(vdisp, CV_8U);
+		imshow("DisparityMap", vdisp);
+		char c = waitKey(100);
+		if (c == 27) 
 		{
-
-			bm->setROI1(roi1);
-			bm->setROI2(roi2);
-			if (getTrackbarPos("setPreFilterCap", "Parametars") > 0)
-				bm->setPreFilterCap(getTrackbarPos("setPreFilterCap", "Parametars"));
-			if (getTrackbarPos("setBlockSize", "Parametars") % 2 != 0 && getTrackbarPos("setBlockSize", "Parametars") > 3)
-				bm->setBlockSize(getTrackbarPos("setBlockSize", "Parametars"));
-			bm->setMinDisparity(0);
-			if (getTrackbarPos("setTextureThreshold", "Parametars") > 0)
-				bm->setNumDisparities(getTrackbarPos("setTextureThreshold", "Parametars") * 16);
-			bm->setTextureThreshold(getTrackbarPos("setNumDisparities", "Parametars"));
-			bm->setUniquenessRatio(getTrackbarPos("setUniquenessRatio", "Parametars"));
-			bm->setSpeckleWindowSize(100);
-			bm->setSpeckleRange(32);
-			bm->setDisp12MaxDiff(1);
-
-			bm->compute(capture1, capture2, disp);
-			normalize(disp, vdisp, 0, 1, CV_MINMAX);
-
-
-			disp.convertTo(vdisp, CV_8U);
-			imshow("DisparityMap", vdisp);
-			char c = waitKey(100);
-			if (c == 27)
+			fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::WRITE);
+			if (fs.isOpened())
 			{
-				//сделать функцию дл€ изменени€ параметров и устранить copypaste
-				fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::WRITE);
-				if (fs.isOpened())
-				{
-					fs << "PreFilterCap" << getTrackbarPos("setPreFilterCap", "Parametars") << "BlockSize" << getTrackbarPos("setBlockSize", "Parametars");
-					fs << "TextureThreshold" << getTrackbarPos("setTextureThreshold", "Parametars") << "NumDisparities" << getTrackbarPos("setNumDisparities", "Parametars");
-					fs << "UniquenessRatio" << getTrackbarPos("setUniquenessRatio", "Parametars");
-				}
-				break;
+				fs << "PreFilterCap" << getTrackbarPos("setPreFilterCap", "Parametars") << "BlockSize" << getTrackbarPos("setBlockSize", "Parametars");
+				fs << "TextureThreshold" << getTrackbarPos("setTextureThreshold", "Parametars") << "NumDisparities" << getTrackbarPos("setNumDisparities", "Parametars");
+				fs << "UniquenessRatio" << getTrackbarPos("setUniquenessRatio", "Parametars");
 			}
-
+			break;
 		}
+			
 	}
 	else
 	{
@@ -504,37 +490,13 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		imshow("DisparityMap", vdisp);
 	}
 }
-static void FindCircles(Mat capture1, int thresholdofCanny, int thresholdofstoradge, int dp,int mindist, int minrad,int maxrad,
-	vector<Vec3f> circles, int *x,int *y, int *heigth, int *width)
+static void FindingCircles(Mat capture1, Mat templ)
 {
-	int xmin=0, ymin=0, xmax=0, ymax=0;
-	HoughCircles(capture1, circles, HOUGH_GRADIENT,
-		dp, mindist, thresholdofCanny+500, thresholdofstoradge, minrad, maxrad);
 	
-	Vec3i coords_and_radius;//¬ектор дл€ чтени€ координат окружности и радиуса, при отрисовке
+		Mat result;
+		matchTemplate(capture1, templ, result, 0);
+		imshow("templ", result);
 	
-	int vec_nums[4]; //ћассив дл€ хранени€ номеров векторов, которые хран€т радиус окружности
-
-	for (size_t i = 0; i < circles.size(); i++)
-	{
-		coords_and_radius = circles[i];
-		circle(capture1, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
-		/*circle(capture1, Point(c[0], c[1]), 2, Scalar(0, 255, 0), 3, LINE_AA);*/
-
-		//ѕоиск максимальных и минимальных координат центров окружностей
-		if (xmax <= coords_and_radius[0])
-		{xmax = coords_and_radius[0];vec_nums[0] = i;}
-		if (ymax <= coords_and_radius[1])
-		{ymax = coords_and_radius[1];vec_nums[1] = i;}
-		if (xmin >= coords_and_radius[0])
-		{xmin = coords_and_radius[0];vec_nums[2] = i;}
-		if (ymin >= coords_and_radius[1])
-		{ymin = coords_and_radius[1];vec_nums[3] = i;}
-	}
-		/*x = floor(xmin -2*circles[t[2]][2]);
-		y = floor(ymin - 2 * circles[t[3]][2]);
-		heigth = ceil(xmax + 2 * circles[t[0]][2] - xmin + 2 * circles[t[2]][2]);
-		width = ceil(ymax + 2 * circles[t[1]][2] - ymin + 2 * circles[t[3]][2]);*/
 }
 
 
@@ -542,7 +504,7 @@ static void FindCircles(Mat capture1, int thresholdofCanny, int thresholdofstora
 int main()
 {
 	char a;
-	Mat frame1, frame2,gframe1,gframe2;
+	Mat frame1, frame2,gframe1,gframe2,result;
 	/*Rect roi1, roi2;*/
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
@@ -562,17 +524,17 @@ int main()
 
 	namedWindow("capture1", 1);
 	namedWindow("capture2", 1);
-	namedWindow("Options", 1);
-	
-	vector<Vec3f> circles1, circles2;
-	int thresholdofCanny=23, thresholdofstoradge=21,t=0,dp=1, minrad=9,maxrad=40, mindist=47,x,y,heigth, width;
 
-	createTrackbar("Threshold", "Options", &thresholdofCanny, 100, 0);
-	createTrackbar("Thresholdofstoradge", "Options", &thresholdofstoradge, 25, 0);
-	createTrackbar("dp", "Options", &dp, 50, 0);
-	createTrackbar("Mindist", "Options", &mindist, 50, 0);
-	createTrackbar("MinRad", "Options", &minrad, 30, 0);
-	createTrackbar("MaxRad", "Options", &maxrad, 80, 0);
+	
+	int t=0;
+	string filename;
+	
+	
+
+	const string prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Template\\";
+	const string postfix = ".png";
+	Mat templ;
+	namedWindow("templ");
 	for (;;)
 	{
 		cap1 >> frame1;
@@ -583,32 +545,13 @@ int main()
 
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
+		for (int i = 1;i <= 5;i++) {
+			templ = imread(prefix + to_string(i) + postfix, 0);
+			FindingCircles(gframe1, templ);
+		}
 
-		//исправить на Find в имени, сделать указатель на массив
-		FindCircles(gframe1,
-			getTrackbarPos("Threshold","Options"), 
-			getTrackbarPos("Thresholdofstoradge", "Options"), 
-			getTrackbarPos("dp", "Options"),
-			getTrackbarPos("Mindist", "Options"),
-			getTrackbarPos("MinRad", "Options"),
-			getTrackbarPos("MaxRad", "Options"),
-			circles1, &x, &y, &heigth, &width);
-		Rect roi1(x, y, heigth, width);
-		
-		FindCircles(gframe2, 
-			getTrackbarPos("Threshold", "Options"), 
-			getTrackbarPos("Thresholdofstoradge", "Options"), 
-			getTrackbarPos("dp", "Options"), 
-			getTrackbarPos("Mindist", "Options"),
-			getTrackbarPos("MinRad", "Options"),
-			getTrackbarPos("MaxRad", "Options"),
-			circles2, &x, &y, &heigth, &width);
-		//Rect roi2(x, y, heigth, width);
-		
-		StereoMatch(t,gframe1,gframe2/*,roi1,roi2*/);
-
-		imshow("capture1", gframe1);
-		imshow("capture2", gframe2);
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
 		
 		t++;
 		char c = waitKey(100);
