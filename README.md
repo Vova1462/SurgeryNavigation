@@ -1,2 +1,0 @@
-# SurgeryNavigation
-Bachelor's project

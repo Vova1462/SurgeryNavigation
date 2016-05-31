@@ -1,0 +1,6 @@
+%YAML:1.0
+PreFilterCap: 31
+BlockSize: 9
+TextureThreshold: 16
+NumDisparities: 16
+UniquenessRatio: 15
