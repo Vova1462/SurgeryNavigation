@@ -389,6 +389,7 @@ static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *
 
 static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, Rect roi2*/)
 {
+	//Инициализация матриц камеры, векторов вращения, перемещения, координат смещения для изображений
 	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, mx1, mx2, my1, my2;
 	Size imgsize = capture1.size();
 	Mat disp(capture1.rows, capture1.cols, CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U), img1rect, img2rect;
@@ -437,7 +438,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	//
 	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
 	
-	//
+	//Применяем отображения 
 	remap(capture1, img1rect, mx1, my1, INTER_LINEAR);
 	remap(capture2, img2rect, mx2, my2, INTER_LINEAR);
 	capture1 = img1rect;
@@ -464,16 +465,6 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	}
 	else
 	{
-		/*fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::READ);
-		if (fs.isOpened())
-		{
-			fs["PreFilterCap"] >> prefiltercap;
-			fs["BlockSize"] >> blocksize;
-			fs["TextureThreshold"] >> texturethreshold;
-			fs["NumDisparities"] >> numdisparity;
-			fs["UniquenessRatio"] >> uniquenessratio;
-		}*/
-
 		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
 		disp.convertTo(vdisp, CV_8U);
