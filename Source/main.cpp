@@ -393,10 +393,10 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	Size imgsize = capture1.size();
 	Mat disp(capture1.rows, capture1.cols, CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U), img1rect, img2rect;
 	Rect roi1, roi2;
-
-	int prefiltercap = 31, blocksize = 9, texturethreshold = 16, numdisparity = 16, uniquenessratio = 15;
+	//Начальная инициализация параметров для стереосоответствия
+	int prefiltercap = 31, blocksize = 21, texturethreshold = 16, numdisparity = 16, uniquenessratio = 0;
 	
-		
+	//Загрузка из YAML фалов внутренних и внешних параметров камеры, и координат для исправления изображений, полученных на этапе калибровки 
 	FileStorage fs;
 	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml",FileStorage::READ);
 	if (fs.isOpened())
@@ -412,7 +412,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
-		fs["M1"]>>M1;
+		fs["M1"] >> M1;
 		fs["M2"] >> M2;
 		fs["D1"] >> D1;
 		fs["D2"] >> D2;
@@ -426,31 +426,35 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["my2"] >> my2;
 	}
 	
-
+	//Создание окон для отображения и изменений параметров стереосоответствия
 	namedWindow("Parametars", 1);
 	createTrackbar("setPreFilterCap", "Parametars", &prefiltercap, 63);
 	createTrackbar("setBlockSize", "Parametars", &blocksize, 100);
 	createTrackbar("setTextureThreshold", "Parametars", &texturethreshold, 70);
 	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
 	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 100);
-	
+
+	//
 	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
 	
+	//
 	remap(capture1, img1rect, mx1, my1, INTER_LINEAR);
 	remap(capture2, img2rect, mx2, my2, INTER_LINEAR);
-
 	capture1 = img1rect;
 	capture2 = img2rect;
+
 
 	Ptr<StereoBM> bm = StereoBM::create(16, 9);
 	if (iteration == 0)
 	for (;;)
 	{
+		//Построение карты несоответствия методом BM с нормализацией изображения для дальнейшего отображения
 		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
 		disp.convertTo(vdisp, CV_8U);
 		
 		imshow("DisparityMap", vdisp);
+
 		char c = waitKey(100);
 		if (c == 27) 
 		{
@@ -460,7 +464,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	}
 	else
 	{
-		fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::READ);
+		/*fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::READ);
 		if (fs.isOpened())
 		{
 			fs["PreFilterCap"] >> prefiltercap;
@@ -468,22 +472,9 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 			fs["TextureThreshold"] >> texturethreshold;
 			fs["NumDisparities"] >> numdisparity;
 			fs["UniquenessRatio"] >> uniquenessratio;
-		}
-		bm->setROI1(roi1);
-		bm->setROI2(roi2);
-		if (prefiltercap>0)
-			bm->setPreFilterCap(prefiltercap);
-		if (blocksize % 2 != 0 && blocksize > 3)
-			bm->setBlockSize(blocksize);
-		bm->setMinDisparity(0);
-		if (numdisparity > 0)
-			bm->setNumDisparities(numdisparity * 16);
-		bm->setTextureThreshold(texturethreshold);
-		bm->setUniquenessRatio(uniquenessratio);
-		bm->setSpeckleWindowSize(100);
-		bm->setSpeckleRange(32);
-		bm->setDisp12MaxDiff(1);
-		bm->compute(capture1, capture2, disp);
+		}*/
+
+		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
 		disp.convertTo(vdisp, CV_8U);
 		imshow("DisparityMap", vdisp);
@@ -497,7 +488,6 @@ static void FindCircles(Mat capture1, Mat templ)
 		imshow("templ", result);
 	
 }
-
 
 
 int main()
