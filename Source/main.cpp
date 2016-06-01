@@ -535,7 +535,7 @@ int main()
 		/*StereoMatch(0, gframe1, gframe2);*/
 	
 		
-		templ = imread(prefix + to_string(1) + postfix, 0);
+		templ = imread(prefix + to_string(4) + postfix, 0);
 		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc);
 		
 
