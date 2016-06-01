@@ -72,7 +72,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		}
 		cout << "Please, write number of corners in the horizontal, in the vertical and path to image list\n";
 		cin >> w>>h;
-		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\image_list.xml";
+		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\Data\\image_list.xml";
 	}
 	vector<string> imagelist;
 	bool ok = ReadStringList(str, imagelist);
@@ -239,7 +239,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	cout << "average epipolar err = " << err / npoints << endl;
 
 	// save intrinsic parameters
-	FileStorage fs("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::WRITE);
+	FileStorage fs("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::WRITE);
 	if (fs.isOpened())
 	{
 		fs << "M1" << cameraMatrix[0] << "D1" << distCoeffs[0] <<
@@ -257,7 +257,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		imageSize, R, T, R1, R2, P1, P2, Q,
 		0, 1, imageSize, &validRoi[0], &validRoi[1]);
 
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml", FileStorage::WRITE);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml", FileStorage::WRITE);
 	if (fs.isOpened())
 	{
 		fs << "R" << R << "T" << T << "R1" << R1 << "R2" << R2 << "P1" << P1 << "P2" << P2 << "Q" << Q;
@@ -267,7 +267,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		cout << "Error: can not save the extrinsic parameters\n";
 
 	Mat _M1;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
 	
 
 	// OpenCV can handle left-right
@@ -312,11 +312,11 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	initUndistortRectifyMap(cameraMatrix[1], distCoeffs[1], R2, P2, imageSize, CV_32F, rmap[1][0], rmap[1][1]);
 	
 	
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml",FileStorage::WRITE);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\coordinates_for_rectifying.yml",FileStorage::WRITE);
 	if (fs.isOpened())
 	{
-		fs << "mx1" << rmap[0][0] << "my1" << rmap[0][1];
-		fs << "mx2" << rmap[1][0]<<"my2"<<rmap[1][1];
+		fs << "mapx1" << rmap[0][0] << "mapy1" << rmap[0][1];
+		fs << "mapx2" << rmap[1][0]<<"mapy2"<<rmap[1][1];
 		fs.release();
 	}
 	
@@ -368,38 +368,46 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	}
 }
 
-static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *dispmap, Rect roi1, Rect roi2)
+static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *dispmap, Rect roi1, Rect roi2, int param_for_stereomatch[5])
 {
+	//Задание параметров для вычисления карты несоответствия
 	bm->setROI1(roi1);
 	bm->setROI2(roi2);
-	if (getTrackbarPos("setPreFilterCap", "Parametars")>0)
-		bm->setPreFilterCap(getTrackbarPos("setPreFilterCap", "Parametars"));
-	if (getTrackbarPos("setBlockSize", "Parametars") % 2 != 0 && getTrackbarPos("setBlockSize", "Parametars") > 3)
-		bm->setBlockSize(getTrackbarPos("setBlockSize", "Parametars"));
+	if (param_for_stereomatch[0]>0)
+		bm->setPreFilterCap(param_for_stereomatch[0]);
+	if (param_for_stereomatch[1] % 2 != 0 && param_for_stereomatch[1] > 3)
+		bm->setBlockSize(param_for_stereomatch[1]);
 	bm->setMinDisparity(0);
-	if (getTrackbarPos("setTextureThreshold", "Parametars") > 0)
-		bm->setNumDisparities(getTrackbarPos("setTextureThreshold", "Parametars") * 16);
-	bm->setTextureThreshold(getTrackbarPos("setNumDisparities", "Parametars"));
-	bm->setUniquenessRatio(getTrackbarPos("setUniquenessRatio", "Parametars"));
+	if (param_for_stereomatch[2] > 0)
+		bm->setNumDisparities(param_for_stereomatch[2] * 16);
+	bm->setTextureThreshold(param_for_stereomatch[3]);
+	bm->setUniquenessRatio(param_for_stereomatch[4]);
 	bm->setSpeckleWindowSize(100);
 	bm->setSpeckleRange(32);
 	bm->setDisp12MaxDiff(1);
+
+	//Вычисление карты несоответствия
 	bm->compute(capture1, capture2, *dispmap);
 }
 
 static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, Rect roi2*/)
 {
 	//Инициализация матриц камеры, векторов вращения, перемещения, координат смещения для изображений
-	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, mx1, mx2, my1, my2;
+	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, mapx1, mapx2, mapy1, mapy2;
 	Size imgsize = capture1.size();
 	Mat disp(capture1.rows, capture1.cols, CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U), img1rect, img2rect;
 	Rect roi1, roi2;
 	//Начальная инициализация параметров для стереосоответствия
-	int prefiltercap = 31, blocksize = 21, texturethreshold = 16, numdisparity = 16, uniquenessratio = 0;
+	int param_for_stereomatch[5];
+	param_for_stereomatch[0] = 31, 
+	param_for_stereomatch[1] = 21, 
+	param_for_stereomatch[2] = 16, 
+	param_for_stereomatch[3] = 16, 
+	param_for_stereomatch[4] = 0;
 	
 	//Загрузка из YAML фалов внутренних и внешних параметров камеры, и координат для исправления изображений, полученных на этапе калибровки 
 	FileStorage fs;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml",FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml",FileStorage::READ);
 	if (fs.isOpened())
 	{
 		fs["R"] >> R;
@@ -410,7 +418,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["P2"] >> P2;
 		fs["Q"] >> Q;
 	}
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
 		fs["M1"] >> M1;
@@ -418,29 +426,29 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["D1"] >> D1;
 		fs["D2"] >> D2;
 	}
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml", FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\coordinates_for_rectifying.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
-		fs["mx1"] >> mx1;
-		fs["my1"] >> my1;
-		fs["mx2"] >> mx2;
-		fs["my2"] >> my2;
+		fs["mapx1"] >> mapx1;
+		fs["mapy1"] >> mapy1;
+		fs["mapx2"] >> mapx2;
+		fs["mapy2"] >> mapy2;
 	}
 	
 	//Создание окон для отображения и изменений параметров стереосоответствия
 	namedWindow("Parametars", 1);
-	createTrackbar("setPreFilterCap", "Parametars", &prefiltercap, 63);
-	createTrackbar("setBlockSize", "Parametars", &blocksize, 100);
-	createTrackbar("setTextureThreshold", "Parametars", &texturethreshold, 70);
-	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
-	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 100);
+	createTrackbar("setPreFilterCap", "Parametars", &param_for_stereomatch[0], 63);
+	createTrackbar("setBlockSize", "Parametars", &param_for_stereomatch[1], 100);
+	createTrackbar("setTextureThreshold", "Parametars", &param_for_stereomatch[2], 70);
+	createTrackbar("setNumDisparities", "Parametars", &param_for_stereomatch[3], 20);
+	createTrackbar("setUniquenessRatio", "Parametars", &param_for_stereomatch[4], 100);
 
-	//
+	//Вычисление элементов для дальнейшего исправления изображений
 	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
 	
-	//Применяем отображения 
-	remap(capture1, img1rect, mx1, my1, INTER_LINEAR);
-	remap(capture2, img2rect, mx2, my2, INTER_LINEAR);
+	//Перестраивает изображения для исправления оптических искажений
+	remap(capture1, img1rect, mapx1, mapy1, INTER_LINEAR);
+	remap(capture2, img2rect, mapx2, mapy2, INTER_LINEAR);
 	capture1 = img1rect;
 	capture2 = img2rect;
 
@@ -450,7 +458,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	for (;;)
 	{
 		//Построение карты несоответствия методом BM с нормализацией изображения для дальнейшего отображения
-		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2);
+		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2, param_for_stereomatch);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
 		disp.convertTo(vdisp, CV_8U);
 		
@@ -465,12 +473,13 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	}
 	else
 	{
-		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2);
+		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2, param_for_stereomatch);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
 		disp.convertTo(vdisp, CV_8U);
 		imshow("DisparityMap", vdisp);
 	}
 }
+
 static void FindCircles(Mat capture1, Mat templ)
 {
 	
@@ -479,7 +488,6 @@ static void FindCircles(Mat capture1, Mat templ)
 		imshow("templ", result);
 	
 }
-
 
 int main()
 {
@@ -524,6 +532,8 @@ int main()
 
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
+
+		StereoMatch(0, gframe1, gframe2);
 	
 		for (int i = 1;i <= 5;i++) {
 			templ = imread(prefix + to_string(i) + postfix, 0);
