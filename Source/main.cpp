@@ -480,7 +480,7 @@ static void FindCircles(Mat capture1, Mat templ, double minval,double maxval, Po
 {
 	
 		Mat result;
-		matchTemplate(capture1, templ, result, 1);
+		matchTemplate(capture1, templ, result, 0);
 		minMaxLoc(result,&minval,&maxval,&minloc,&maxloc);
 		rectangle(capture1, Point(minloc.x,minloc.y),Point(minloc.x+templ.cols-1,minloc.y+templ.rows-1),CV_RGB(255,0,0),1,8);
 		imshow("templ", result);
