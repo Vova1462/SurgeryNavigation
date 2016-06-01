@@ -399,11 +399,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	Rect roi1, roi2;
 	//Начальная инициализация параметров для стереосоответствия
 	int param_for_stereomatch[5];
-	param_for_stereomatch[0] = 31, 
-	param_for_stereomatch[1] = 21, 
-	param_for_stereomatch[2] = 16, 
-	param_for_stereomatch[3] = 16, 
-	param_for_stereomatch[4] = 0;
+	param_for_stereomatch[0] = 31, param_for_stereomatch[1] = 21,param_for_stereomatch[2] = 16,	param_for_stereomatch[3] = 16,param_for_stereomatch[4] = 0;
 	
 	//Загрузка из YAML фалов внутренних и внешних параметров камеры, и координат для исправления изображений, полученных на этапе калибровки 
 	FileStorage fs;
@@ -480,20 +476,29 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	}
 }
 
-static void FindCircles(Mat capture1, Mat templ)
+static void FindCircles(Mat capture1, Mat templ, double minval,double maxval, Point minloc, Point maxloc)
 {
 	
 		Mat result;
-		matchTemplate(capture1, templ, result, 0);
+		matchTemplate(capture1, templ, result, 1);
+		minMaxLoc(result,&minval,&maxval,&minloc,&maxloc);
+		rectangle(capture1, Point(minloc.x,minloc.y),Point(minloc.x+templ.cols-1,minloc.y+templ.rows-1),CV_RGB(255,0,0),1,8);
 		imshow("templ", result);
+		imshow("capture1",capture1);
 	
 }
 
 int main()
 {
 	char a;
-	Mat frame1, frame2,gframe1,gframe2,result;
-	
+	Mat frame1, frame2,gframe1,gframe2;
+	string filename;
+	const string prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Template\\";
+	const string postfix = ".png";
+	double minval=0, maxval=0;
+	Point minloc, maxloc;
+
+
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
 		return -1;
@@ -512,13 +517,7 @@ int main()
 
 	namedWindow("capture1", 1);
 	namedWindow("capture2", 1);
-
 	
-	int t=0;
-	string filename;
-	
-	const string prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Template\\";
-	const string postfix = ".png";
 	
 	Mat templ;
 	namedWindow("templ");
@@ -533,15 +532,15 @@ int main()
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 
-		StereoMatch(0, gframe1, gframe2);
+		/*StereoMatch(0, gframe1, gframe2);*/
 	
-		for (int i = 1;i <= 5;i++) {
-			templ = imread(prefix + to_string(i) + postfix, 0);
-			FindCircles(gframe1, templ);
-		}
+		
+		templ = imread(prefix + to_string(1) + postfix, 0);
+		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc);
+		
 
-		imshow("capture1", frame1);
-		imshow("capture2", frame2);
+		//imshow("capture1", frame1);
+		//imshow("capture2", frame2);
 		
 
 		char c = waitKey(100);
