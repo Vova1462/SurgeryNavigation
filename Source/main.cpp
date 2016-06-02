@@ -23,7 +23,6 @@ static bool ReadStringList(const string& filename, vector<string>& l)
 	return true;
 }
 
-
 static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 {
 	char a;
@@ -59,8 +58,8 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 			compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
 			compression_params.push_back(9);
 			char c = waitKey(33);
-			const string prefix_left("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration1\\left");
-			const string prefix_right("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration1\\right");
+			const string prefix_left("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\left");
+			const string prefix_right("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\right");
 			const string postfix(".png");
 			if (c == 13)
 			{
@@ -72,7 +71,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		}
 		cout << "Please, write number of corners in the horizontal, in the vertical and path to image list\n";
 		cin >> w>>h;
-		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\Data\\image_list.xml";
+		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\image_list.xml";
 	}
 	vector<string> imagelist;
 	bool ok = ReadStringList(str, imagelist);
@@ -310,16 +309,6 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 
 	initUndistortRectifyMap(cameraMatrix[0], distCoeffs[0], R1, P1, imageSize, CV_32F, rmap[0][0], rmap[0][1]);
 	initUndistortRectifyMap(cameraMatrix[1], distCoeffs[1], R2, P2, imageSize, CV_32F, rmap[1][0], rmap[1][1]);
-	
-	
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\coordinates_for_rectifying.yml",FileStorage::WRITE);
-	if (fs.isOpened())
-	{
-		fs << "mapx1" << rmap[0][0] << "mapy1" << rmap[0][1];
-		fs << "mapx2" << rmap[1][0]<<"mapy2"<<rmap[1][1];
-		fs.release();
-	}
-	
 
 	Mat canvas;
 	double sf;
@@ -368,7 +357,60 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	}
 }
 
-static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *dispmap, Rect roi1, Rect roi2, int param_for_stereomatch[5])
+static void CreatROI(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2, Size imgsize)
+{
+	//»нициализаци€ матриц камеры, векторов вращени€, перемещени€, координат смещени€ дл€ изображений
+	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, rect_map[2][2],img1rect, img2rect;
+	//«агрузка из YAML фалов внутренних и внешних параметров камеры, и координат дл€ исправлени€ изображений, полученных на этапе калибровки 
+	FileStorage fs;
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml", FileStorage::READ);
+	if (fs.isOpened())
+	{
+		fs["R"] >> R;
+		fs["T"] >> T;
+		fs["R1"] >> R1;
+		fs["P1"] >> R1;
+		fs["R2"] >> R2;
+		fs["P2"] >> P2;
+		fs["Q"] >> Q;
+	}
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
+	if (fs.isOpened())
+	{
+		fs["M1"] >> M1;
+		fs["M2"] >> M2;
+		fs["D1"] >> D1;
+		fs["D2"] >> D2;
+	}
+
+	//¬ычисление областей дл€ работы с изображением
+	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, roi1, roi2);
+
+	//¬ычисление координат дл€ исправлени€ искажений на изображни€х
+	initUndistortRectifyMap(M1, D1, R1, P1, imgsize, CV_16SC2, rect_map[0][0], rect_map[0][1]);
+	initUndistortRectifyMap(M2, D2, R2, P2, imgsize, CV_16SC2, rect_map[1][0], rect_map[0][1]);
+
+	//ѕерестраивает изображени€ дл€ исправлени€ оптических искажений
+	remap(*capture1, img1rect, rect_map[0][0], rect_map[0][1], INTER_LINEAR);
+	remap(*capture2, img2rect, rect_map[1][0], rect_map[0][1], INTER_LINEAR);
+	
+	Mat croped_img1, croped_img2;
+	if (roi1->area() <= roi2->area())
+	{
+		croped_img1 = img1rect(*roi1);
+		croped_img2 = img2rect(*roi1);
+	}
+	else
+	{
+		croped_img1 = img1rect(*roi2);
+		croped_img2 = img2rect(*roi2);
+	}
+	*capture1 = croped_img1;
+	*capture2 = croped_img2;
+
+}
+
+static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *dispmap, Rect roi1, Rect roi2, int *param_for_stereomatch)
 {
 	//«адание параметров дл€ вычислени€ карты несоответстви€
 	bm->setROI1(roi1);
@@ -390,46 +432,13 @@ static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *
 	bm->compute(capture1, capture2, *dispmap);
 }
 
-static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, Rect roi2*/)
+static void StereoMatch(int iteration, Mat capture1,Mat capture2, Rect roi1, Rect roi2)
 {
-	//»нициализаци€ матриц камеры, векторов вращени€, перемещени€, координат смещени€ дл€ изображений
-	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, mapx1, mapx2, mapy1, mapy2;
-	Size imgsize = capture1.size();
 	Mat disp(capture1.rows, capture1.cols, CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U), img1rect, img2rect;
-	Rect roi1, roi2;
+	
 	//Ќачальна€ инициализаци€ параметров дл€ стереосоответстви€
 	int param_for_stereomatch[5];
 	param_for_stereomatch[0] = 31, param_for_stereomatch[1] = 21,param_for_stereomatch[2] = 16,	param_for_stereomatch[3] = 16,param_for_stereomatch[4] = 0;
-	
-	//«агрузка из YAML фалов внутренних и внешних параметров камеры, и координат дл€ исправлени€ изображений, полученных на этапе калибровки 
-	FileStorage fs;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml",FileStorage::READ);
-	if (fs.isOpened())
-	{
-		fs["R"] >> R;
-		fs["T"]>> T;
-		fs["R1"] >> R1;
-		fs["P1"] >> R1;
-		fs["R2"] >> R2;
-		fs["P2"] >> P2;
-		fs["Q"] >> Q;
-	}
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
-	if (fs.isOpened())
-	{
-		fs["M1"] >> M1;
-		fs["M2"] >> M2;
-		fs["D1"] >> D1;
-		fs["D2"] >> D2;
-	}
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\coordinates_for_rectifying.yml", FileStorage::READ);
-	if (fs.isOpened())
-	{
-		fs["mapx1"] >> mapx1;
-		fs["mapy1"] >> mapy1;
-		fs["mapx2"] >> mapx2;
-		fs["mapy2"] >> mapy2;
-	}
 	
 	//—оздание окон дл€ отображени€ и изменений параметров стереосоответстви€
 	namedWindow("Parametars", 1);
@@ -439,20 +448,16 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	createTrackbar("setNumDisparities", "Parametars", &param_for_stereomatch[3], 20);
 	createTrackbar("setUniquenessRatio", "Parametars", &param_for_stereomatch[4], 100);
 
-	//¬ычисление элементов дл€ дальнейшего исправлени€ изображений
-	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
-	
-	//ѕерестраивает изображени€ дл€ исправлени€ оптических искажений
-	remap(capture1, img1rect, mapx1, mapy1, INTER_LINEAR);
-	remap(capture2, img2rect, mapx2, mapy2, INTER_LINEAR);
-	capture1 = img1rect;
-	capture2 = img2rect;
-
 
 	Ptr<StereoBM> bm = StereoBM::create(16, 9);
 	if (iteration == 0)
 	for (;;)
 	{
+		param_for_stereomatch[0] = getTrackbarPos("setPreFilterCap", "Parametars");
+		param_for_stereomatch[1] = getTrackbarPos("setBlockSize", "Parametars");
+		param_for_stereomatch[2] = getTrackbarPos("setBlockSize", "Parametars");
+		param_for_stereomatch[3] = getTrackbarPos("setNumDisparities", "Parametars");
+		param_for_stereomatch[4] = getTrackbarPos("setUniquenessRatio", "Parametars");
 		//ѕостроение карты несоответстви€ методом BM с нормализацией изображени€ дл€ дальнейшего отображени€
 		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2, param_for_stereomatch);
 		normalize(disp, vdisp, 0, 1, CV_MINMAX);
@@ -476,28 +481,53 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	}
 }
 
-static void FindCircles(Mat capture1, Mat templ, double minval,double maxval, Point minloc, Point maxloc)
+static void FindCircles(Mat capture1, Mat templ, double minval,double maxval, Point minloc, Point maxloc, int search_metod, Mat *gray_result)
 {
 	
 		Mat result;
-		matchTemplate(capture1, templ, result, 0);
-		minMaxLoc(result,&minval,&maxval,&minloc,&maxloc);
-		rectangle(capture1, Point(minloc.x,minloc.y),Point(minloc.x+templ.cols-1,minloc.y+templ.rows-1),CV_RGB(255,0,0),1,8);
-		imshow("templ", result);
-		imshow("capture1",capture1);
+	
+		//ѕоиск шаблона
+		matchTemplate(capture1, templ, result, search_metod);
+		
+		Mat treshold_result;
+		/*result.convertTo(uint_result, CV_32F);*/
+		threshold(result, treshold_result,8.0e+6, 1, THRESH_BINARY_INV);
+		imshow("result", treshold_result);
+		treshold_result.convertTo(*gray_result, CV_8UC1);
+
+		//for (;;)
+		//{
+		//	//ѕоиск пикселей с максимальной и минимальной €ркостью
+		//	minMaxLoc(result, &minval, &maxval, &minloc, &maxloc);
+		//	//ќтображение пр€моугольника вокруг пикселей минимальной €ркости
+		//	rectangle(capture1, Point(minloc.x, minloc.y), Point(minloc.x + templ.cols - 1, minloc.y + templ.rows - 1), CV_RGB(255, 0, 0), 1, 8);
+		//	
+		//	for (int i = minloc.x;i < minloc.x;i++)
+		//		for (int j = minloc.y;j < minloc.y;j++)
+		//			result.at<float>(i, j) != result.at<float>(i, j);
+
+		//	imshow("result", result);
+		//	imshow("capture1", capture1);
+		//	char c = waitKey(100);
+		//	if (c == 27) break;
+		//}
 	
 }
 
 int main()
 {
 	char a;
-	Mat frame1, frame2,gframe1,gframe2;
+	Mat frame1, frame2, gframe1, gframe2, templ, match_img1, match_img2;
 	string filename;
-	const string prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Template\\";
+	const string templ_prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Template\\", img_prefix= "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Images\\";
 	const string postfix = ".png";
 	double minval=0, maxval=0;
 	Point minloc, maxloc;
-
+	Rect roi1, roi2;
+	//ѕараметр показывающий откуда брать изображение. ≈сли 0-то с камер, если 1-то из файла.
+	int source_of_image = 1;
+	//ѕараметр устанавливающий метод поиска шаблона. ¬арьируетс€ от 0 до 5
+	int search_metod=0;
 
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
@@ -514,33 +544,47 @@ int main()
 		StereoCallibration(cap1,cap2);
 	}
 	
-
+	namedWindow("templ");
 	namedWindow("capture1", 1);
 	namedWindow("capture2", 1);
 	
 	
-	Mat templ;
-	namedWindow("templ");
+
 	for (;;)
 	{
-		cap1 >> frame1;
-		cap2 >> frame2;
+		if (source_of_image == 0)
+		{
+			cap1 >> frame1;
+			cap2 >> frame2;
+		}
+		else if (source_of_image == 1)
+		{
+			frame1 = imread(img_prefix+"1_1"+postfix,1);
+			frame2 = imread(img_prefix + "2_1" + postfix, 1);
+		}
 
-		gframe1.create(480, 640, CV_8UC1);
-		gframe2.create(480, 640, CV_8UC1);
+		CreatROI(&frame1,&frame2,&roi1,&roi2,frame1.size());
+
+
+		gframe1.create(frame1.rows, frame1.cols, CV_8UC1);
+		gframe2.create(frame2.rows, frame2.cols, CV_8UC1);
 
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 
-		/*StereoMatch(0, gframe1, gframe2);*/
+		
 	
 		
-		templ = imread(prefix + to_string(4) + postfix, 0);
-		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc);
+		templ = imread(templ_prefix + to_string(4) + postfix, 0);
+		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc, search_metod,&match_img1);
+		FindCircles(gframe2, templ, minval, maxval, minloc, maxloc, search_metod, &match_img2);
 		
-
-		//imshow("capture1", frame1);
-		//imshow("capture2", frame2);
+		
+		StereoMatch(0, match_img1, match_img2, roi1, roi2);
+		
+		
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
 		
 
 		char c = waitKey(100);
