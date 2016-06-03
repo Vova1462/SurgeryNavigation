@@ -572,14 +572,11 @@ int main()
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 
-		
-	
-		
 		templ = imread(templ_prefix + to_string(4) + postfix, 0);
+
 		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc, search_metod,&match_img1);
 		FindCircles(gframe2, templ, minval, maxval, minloc, maxloc, search_metod, &match_img2);
-		
-		
+				
 		StereoMatch(0, match_img1, match_img2, roi1, roi2);
 		
 		
