@@ -399,11 +399,13 @@ static void CreatROI(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2, Size 
 	{
 		croped_img1 = img1rect(*roi1);
 		croped_img2 = img2rect(*roi1);
+		*roi2 = *roi1;
 	}
 	else
 	{
 		croped_img1 = img1rect(*roi2);
 		croped_img2 = img2rect(*roi2);
+		*roi1 = *roi2;
 	}
 	*capture1 = croped_img1;
 	*capture2 = croped_img2;
@@ -419,13 +421,17 @@ static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *
 		bm->setPreFilterCap(param_for_stereomatch[0]);
 	if (param_for_stereomatch[1] % 2 != 0 && param_for_stereomatch[1] > 3)
 		bm->setBlockSize(param_for_stereomatch[1]);
+	else
+		bm->setBlockSize(8);
+
+		
 	bm->setMinDisparity(0);
-	if (param_for_stereomatch[2] > 0)
+	if (param_for_stereomatch[2] >= 0)
 		bm->setNumDisparities(param_for_stereomatch[2] * 16);
 	bm->setTextureThreshold(param_for_stereomatch[3]);
 	bm->setUniquenessRatio(param_for_stereomatch[4]);
-	bm->setSpeckleWindowSize(100);
-	bm->setSpeckleRange(32);
+	bm->setSpeckleWindowSize(50);
+	bm->setSpeckleRange(6);
 	bm->setDisp12MaxDiff(1);
 
 	//¬ычисление карты несоответстви€
@@ -438,12 +444,12 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2, Rect roi1, Rec
 	
 	//Ќачальна€ инициализаци€ параметров дл€ стереосоответстви€
 	int param_for_stereomatch[5];
-	param_for_stereomatch[0] = 31, param_for_stereomatch[1] = 21,param_for_stereomatch[2] = 16,	param_for_stereomatch[3] = 16,param_for_stereomatch[4] = 0;
+	param_for_stereomatch[0] = 31, param_for_stereomatch[1] = 11,param_for_stereomatch[2] = 16,	param_for_stereomatch[3] = 16,param_for_stereomatch[4] = 0;
 	
 	//—оздание окон дл€ отображени€ и изменений параметров стереосоответстви€
 	namedWindow("Parametars", 1);
 	createTrackbar("setPreFilterCap", "Parametars", &param_for_stereomatch[0], 63);
-	createTrackbar("setBlockSize", "Parametars", &param_for_stereomatch[1], 100);
+	createTrackbar("setBlockSize", "Parametars", &param_for_stereomatch[1], 30);
 	createTrackbar("setTextureThreshold", "Parametars", &param_for_stereomatch[2], 70);
 	createTrackbar("setNumDisparities", "Parametars", &param_for_stereomatch[3], 20);
 	createTrackbar("setUniquenessRatio", "Parametars", &param_for_stereomatch[4], 100);
@@ -460,8 +466,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2, Rect roi1, Rec
 		param_for_stereomatch[4] = getTrackbarPos("setUniquenessRatio", "Parametars");
 		//ѕостроение карты несоответстви€ методом BM с нормализацией изображени€ дл€ дальнейшего отображени€
 		CreateDisparityMap(bm, capture1, capture2, &disp, roi1, roi2, param_for_stereomatch);
-		normalize(disp, vdisp, 0, 1, CV_MINMAX);
-		disp.convertTo(vdisp, CV_8U);
+		disp.convertTo(vdisp, CV_8U, 1/16.);
 		
 		imshow("DisparityMap", vdisp);
 
@@ -525,7 +530,7 @@ int main()
 	Point minloc, maxloc;
 	Rect roi1, roi2;
 	//ѕараметр показывающий откуда брать изображение. ≈сли 0-то с камер, если 1-то из файла.
-	int source_of_image = 1;
+	int source_of_image = 0;
 	//ѕараметр устанавливающий метод поиска шаблона. ¬арьируетс€ от 0 до 5
 	int search_metod=0;
 
@@ -559,29 +564,33 @@ int main()
 		}
 		else if (source_of_image == 1)
 		{
-			frame1 = imread(img_prefix+"1_1"+postfix,1);
-			frame2 = imread(img_prefix + "2_1" + postfix, 1);
+			frame1 = imread(img_prefix+"1_2"+postfix,1);
+			frame2 = imread(img_prefix + "2_2" + postfix, 1);
 		}
-
+		
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
+		//ќбрезка и исправление искажений на изображени€х
 		CreatROI(&frame1,&frame2,&roi1,&roi2,frame1.size());
 
-
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
 		gframe1.create(frame1.rows, frame1.cols, CV_8UC1);
 		gframe2.create(frame2.rows, frame2.cols, CV_8UC1);
 
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
-
+		//«агрузка шаблона
 		templ = imread(templ_prefix + to_string(4) + postfix, 0);
-
+		//ѕоиск кругов и создание изображений дл€ поиска соответстви€
 		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc, search_metod,&match_img1);
 		FindCircles(gframe2, templ, minval, maxval, minloc, maxloc, search_metod, &match_img2);
-				
-		StereoMatch(0, match_img1, match_img2, roi1, roi2);
+		
+		//ѕоиск соответстви€ между изображени€ми
+		StereoMatch(0, gframe1, gframe2, roi1, roi2);
 		
 		
-		imshow("capture1", frame1);
-		imshow("capture2", frame2);
+
 		
 
 		char c = waitKey(100);
