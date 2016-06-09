@@ -1,4 +1,4 @@
-#include<cv.hpp>
+п»ї#include<cv.hpp>
 #include<opencv2\videoio.hpp>
 #include <string>
 #include <iostream>
@@ -240,7 +240,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	cout << "average epipolar err = " << err / npoints << endl;
 
 	// save intrinsic parameters
-	FileStorage fs("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::WRITE);
+	FileStorage fs("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::WRITE);
 	if (fs.isOpened())
 	{
 		fs << "M1" << cameraMatrix[0] << "D1" << distCoeffs[0] <<
@@ -258,7 +258,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		imageSize, R, T, R1, R2, P1, P2, Q,
 		0, 1, imageSize, &validRoi[0], &validRoi[1]);
 
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml", FileStorage::WRITE);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml", FileStorage::WRITE);
 	if (fs.isOpened())
 	{
 		fs << "R" << R << "T" << T << "R1" << R1 << "R2" << R2 << "P1" << P1 << "P2" << P2 << "Q" << Q;
@@ -268,7 +268,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		cout << "Error: can not save the extrinsic parameters\n";
 
 	Mat _M1;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
 	
 
 	// OpenCV can handle left-right
@@ -313,11 +313,11 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	initUndistortRectifyMap(cameraMatrix[1], distCoeffs[1], R2, P2, imageSize, CV_32F, rmap[1][0], rmap[1][1]);
 	
 	
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml",FileStorage::WRITE);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\coordinates_for_rectifying.yml",FileStorage::WRITE);
 	if (fs.isOpened())
 	{
-		fs << "mx1" << rmap[0][0] << "my1" << rmap[0][1];
-		fs << "mx2" << rmap[1][0]<<"my2"<<rmap[1][1];
+		fs << "mapx1" << rmap[0][0] << "mapy1" << rmap[0][1];
+		fs << "mapx2" << rmap[1][0]<<"mapy2"<<rmap[1][1];
 		fs.release();
 	}
 	
@@ -369,6 +369,61 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	}
 }
 
+static void CreatROI(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2, Size imgsize)
+{
+	//Г€Г­ГЁГ¶ГЁГ Г«ГЁГ§Г Г¶ГЁГї Г¬Г ГІГ°ГЁГ¶ ГЄГ Г¬ГҐГ°Г», ГўГҐГЄГІГ®Г°Г®Гў ГўГ°Г Г№ГҐГ­ГЁГї, ГЇГҐГ°ГҐГ¬ГҐГ№ГҐГ­ГЁГї, ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г±Г¬ГҐГ№ГҐГ­ГЁГї Г¤Г«Гї ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГ©
+	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, rect_map[2][2], img1rect, img2rect;
+	//Г‡Г ГЈГ°ГіГ§ГЄГ  ГЁГ§ YAML ГґГ Г«Г®Гў ГўГ­ГіГІГ°ГҐГ­Г­ГЁГµ ГЁ ГўГ­ГҐГёГ­ГЁГµ ГЇГ Г°Г Г¬ГҐГІГ°Г®Гў ГЄГ Г¬ГҐГ°Г», ГЁ ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г¤Г«Гї ГЁГ±ГЇГ°Г ГўГ«ГҐГ­ГЁГї ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГ©, ГЇГ®Г«ГіГ·ГҐГ­Г­Г»Гµ Г­Г  ГЅГІГ ГЇГҐ ГЄГ Г«ГЁГЎГ°Г®ГўГЄГЁ 
+	FileStorage fs;
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml", FileStorage::READ);
+	if (fs.isOpened())
+	{
+		fs["R"] >> R;
+		fs["T"] >> T;
+		fs["R1"] >> R1;
+		fs["P1"] >> R1;
+		fs["R2"] >> R2;
+		fs["P2"] >> P2;
+		fs["Q"] >> Q;
+	}
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
+	if (fs.isOpened())
+	{
+		fs["M1"] >> M1;
+		fs["M2"] >> M2;
+		fs["D1"] >> D1;
+		fs["D2"] >> D2;
+	}
+
+	//Г‚Г»Г·ГЁГ±Г«ГҐГ­ГЁГҐ Г®ГЎГ«Г Г±ГІГҐГ© Г¤Г«Гї Г°Г ГЎГ®ГІГ» Г± ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГҐГ¬
+	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, roi1, roi2);
+
+	//Г‚Г»Г·ГЁГ±Г«ГҐГ­ГЁГҐ ГЄГ®Г®Г°Г¤ГЁГ­Г ГІ Г¤Г«Гї ГЁГ±ГЇГ°Г ГўГ«ГҐГ­ГЁГї ГЁГ±ГЄГ Г¦ГҐГ­ГЁГ© Г­Г  ГЁГ§Г®ГЎГ°Г Г¦Г­ГЁГїГµ
+	initUndistortRectifyMap(M1, D1, R1, P1, imgsize, CV_16SC2, rect_map[0][0], rect_map[0][1]);
+	initUndistortRectifyMap(M2, D2, R2, P2, imgsize, CV_16SC2, rect_map[1][0], rect_map[0][1]);
+
+	//ГЏГҐГ°ГҐГ±ГІГ°Г ГЁГўГ ГҐГІ ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГї Г¤Г«Гї ГЁГ±ГЇГ°Г ГўГ«ГҐГ­ГЁГї Г®ГЇГІГЁГ·ГҐГ±ГЄГЁГµ ГЁГ±ГЄГ Г¦ГҐГ­ГЁГ©
+	remap(*capture1, img1rect, rect_map[0][0], rect_map[0][1], INTER_LINEAR);
+	remap(*capture2, img2rect, rect_map[1][0], rect_map[0][1], INTER_LINEAR);
+
+	//ГЋГЎГ°ГҐГ§ГЄГ  ГЁГ§Г®ГЎГ°Г Г¦ГҐГ­ГЁГ©
+	Mat croped_img1, croped_img2;
+	if (roi1->area() <= roi2->area())
+	{
+		croped_img1 = img1rect(*roi1);
+		croped_img2 = img2rect(*roi1);
+		*roi2 = *roi1;
+	}
+	else
+	{
+		croped_img1 = img1rect(*roi2);
+		croped_img2 = img2rect(*roi2);
+		*roi1 = *roi2;
+	}
+	*capture1 = croped_img1;
+	*capture2 = croped_img2;
+
+}
 
 static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, Rect roi2*/)
 {
@@ -380,7 +435,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	Mat disp(capture1.rows, capture1.cols,CV_16S), vdisp(capture1.rows, capture1.cols, CV_8U),img1rect,img2rect;
 
 	FileStorage fs;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\extrinsics.yml",FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml",FileStorage::READ);
 	if (fs.isOpened())
 	{
 		fs["R"] >> R;
@@ -391,7 +446,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["P2"] >> P2;
 		fs["Q"] >> Q;
 	}
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\intrinsics.yml", FileStorage::READ);
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
 		fs["M1"]>>M1;
@@ -399,14 +454,14 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		fs["D1"] >> D1;
 		fs["D2"] >> D2;
 	}
-	//поставить коментарий
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\mx1.yml", FileStorage::READ);
+	//РїРѕСЃС‚Р°РІРёС‚СЊ РєРѕРјРµРЅС‚Р°СЂРёР№
+	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\coordinates_for_rectifying.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
-		fs["mx1"] >> mx1;
-		fs["my1"] >> my1;
-		fs["mx2"] >> mx2;
-		fs["my2"] >> my2;
+		fs["mapx1"] >> mx1;
+		fs["mapy1"] >> my1;
+		fs["mapx2"] >> mx2;
+		fs["mapy2"] >> my2;
 	}
 
 
@@ -417,10 +472,10 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	createTrackbar("setNumDisparities", "Parametars", &numdisparity, 20);
 	createTrackbar("setUniquenessRatio", "Parametars", &uniquenessratio, 20);
 
-	//Вычисление характеристик для дальнейшего изображений
+	//Р’С‹С‡РёСЃР»РµРЅРёРµ С…Р°СЂР°РєС‚РµСЂРёСЃС‚РёРє РґР»СЏ РґР°Р»СЊРЅРµР№С€РµРіРѕ РёР·РѕР±СЂР°Р¶РµРЅРёР№
 	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, &roi1,&roi2);
 	
-	//Перестраивает изображения для исправления оптических искажений 
+	//РџРµСЂРµСЃС‚СЂР°РёРІР°РµС‚ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ РґР»СЏ РёСЃРїСЂР°РІР»РµРЅРёСЏ РѕРїС‚РёС‡РµСЃРєРёС… РёСЃРєР°Р¶РµРЅРёР№ 
 	remap(capture1, img1rect, mx1, my1, INTER_LINEAR);
 	remap(capture2, img2rect, mx2, my2, INTER_LINEAR);
 
@@ -428,7 +483,7 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 	capture2 = img2rect;
 
 	Ptr<StereoBM> bm = StereoBM::create(64, 21);
-	//Логические отступы и добавить коментарии
+	//Р›РѕРіРёС‡РµСЃРєРёРµ РѕС‚СЃС‚СѓРїС‹ Рё РґРѕР±Р°РІРёС‚СЊ РєРѕРјРµРЅС‚Р°СЂРёРё
 	if (iteration == 0)
 	{
 		imshow("capture1", capture1);
@@ -460,8 +515,8 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 			char c = waitKey(100);
 			if (c == 27)
 			{
-				//сделать функцию для изменения параметров и устранить copypaste
-				fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\params.yml", FileStorage::WRITE);
+				//СЃРґРµР»Р°С‚СЊ С„СѓРЅРєС†РёСЋ РґР»СЏ РёР·РјРµРЅРµРЅРёСЏ РїР°СЂР°РјРµС‚СЂРѕРІ Рё СѓСЃС‚СЂР°РЅРёС‚СЊ copypaste
+				fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\params.yml", FileStorage::WRITE);
 				if (fs.isOpened())
 				{
 					fs << "PreFilterCap" << getTrackbarPos("setPreFilterCap", "Parametars") << "BlockSize" << getTrackbarPos("setBlockSize", "Parametars");
@@ -504,16 +559,20 @@ static void StereoMatch(int iteration, Mat capture1,Mat capture2/*, Rect roi1, R
 		imshow("DisparityMap", vdisp);
 	}
 }
+
 static void FindCircles(Mat capture1, int thresholdofCanny, int thresholdofstoradge, int dp,int mindist, int minrad,int maxrad,
-	vector<Vec3f> circles, int *x,int *y, int *heigth, int *width)
+	vector<Vec3f> *circles)
 {
+	Mat blured;
 	int xmin=0, ymin=0, xmax=0, ymax=0;
-	HoughCircles(capture1, circles, HOUGH_GRADIENT,
-		dp, mindist, thresholdofCanny+500, thresholdofstoradge, minrad, maxrad);
+	medianBlur(capture1, blured, 21);
+	//Canny(blured, capture1, 100, 100);
+	HoughCircles(blured, circles, HOUGH_GRADIENT,
+		dp, mindist, thresholdofCanny+100, thresholdofstoradge, minrad, maxrad);
 	
-	Vec3i coords_and_radius;//Вектор для чтения координат окружности и радиуса, при отрисовке
+	Vec3i coords_and_radius;//Р’РµРєС‚РѕСЂ РґР»СЏ С‡С‚РµРЅРёСЏ РєРѕРѕСЂРґРёРЅР°С‚ РѕРєСЂСѓР¶РЅРѕСЃС‚Рё Рё СЂР°РґРёСѓСЃР°, РїСЂРё РѕС‚СЂРёСЃРѕРІРєРµ
 	
-	int vec_nums[4]; //Массив для хранения номеров векторов, которые хранят радиус окружности
+	int vec_nums[4]; //РњР°СЃСЃРёРІ РґР»СЏ С…СЂР°РЅРµРЅРёСЏ РЅРѕРјРµСЂРѕРІ РІРµРєС‚РѕСЂРѕРІ, РєРѕС‚РѕСЂС‹Рµ С…СЂР°РЅСЏС‚ СЂР°РґРёСѓСЃ РѕРєСЂСѓР¶РЅРѕСЃС‚Рё
 
 	for (size_t i = 0; i < circles.size(); i++)
 	{
@@ -521,7 +580,7 @@ static void FindCircles(Mat capture1, int thresholdofCanny, int thresholdofstora
 		circle(capture1, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
 		/*circle(capture1, Point(c[0], c[1]), 2, Scalar(0, 255, 0), 3, LINE_AA);*/
 
-		//Поиск максимальных и минимальных координат центров окружностей
+		//РџРѕРёСЃРє РјР°РєСЃРёРјР°Р»СЊРЅС‹С… Рё РјРёРЅРёРјР°Р»СЊРЅС‹С… РєРѕРѕСЂРґРёРЅР°С‚ С†РµРЅС‚СЂРѕРІ РѕРєСЂСѓР¶РЅРѕСЃС‚РµР№
 		if (xmax <= coords_and_radius[0])
 		{xmax = coords_and_radius[0];vec_nums[0] = i;}
 		if (ymax <= coords_and_radius[1])
@@ -543,7 +602,9 @@ int main()
 {
 	char a;
 	Mat frame1, frame2,gframe1,gframe2;
-	/*Rect roi1, roi2;*/
+	const string img_prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Images\\";
+	const string postfix = ".png";
+	Rect roi1, roi2;
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
 		return -1;
@@ -551,7 +612,7 @@ int main()
 	if (!cap2.isOpened())
 		return -2;
 
-
+	int source_of_image = 0;
 	cout << "Do you need calibration?Y/N\n";
 	cin >> a;
 	if (a == 'Y')
@@ -575,8 +636,17 @@ int main()
 	createTrackbar("MaxRad", "Options", &maxrad, 80, 0);
 	for (;;)
 	{
-		cap1 >> frame1;
-		cap2 >> frame2;
+		if (source_of_image == 0)
+		{
+			cap1 >> frame1;
+			cap2 >> frame2;
+		}
+		else if (source_of_image == 1)
+		{
+			frame1 = imread(img_prefix + "1_2" + postfix, 1);
+			frame2 = imread(img_prefix + "2_2" + postfix, 1);
+		}
+		CreatROI(&frame1, &frame2, &roi1, &roi2, frame1.size());
 
 		gframe1.create(480, 640, CV_8UC1);
 		gframe2.create(480, 640, CV_8UC1);
@@ -584,7 +654,7 @@ int main()
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 
-		//исправить на Find в имени, сделать указатель на массив
+		//РёСЃРїСЂР°РІРёС‚СЊ РЅР° Find РІ РёРјРµРЅРё, СЃРґРµР»Р°С‚СЊ СѓРєР°Р·Р°С‚РµР»СЊ РЅР° РјР°СЃСЃРёРІ
 		FindCircles(gframe1,
 			getTrackbarPos("Threshold","Options"), 
 			getTrackbarPos("Thresholdofstoradge", "Options"), 
@@ -592,7 +662,7 @@ int main()
 			getTrackbarPos("Mindist", "Options"),
 			getTrackbarPos("MinRad", "Options"),
 			getTrackbarPos("MaxRad", "Options"),
-			circles1, &x, &y, &heigth, &width);
+			&circles1);
 		Rect roi1(x, y, heigth, width);
 		
 		FindCircles(gframe2, 
@@ -602,10 +672,10 @@ int main()
 			getTrackbarPos("Mindist", "Options"),
 			getTrackbarPos("MinRad", "Options"),
 			getTrackbarPos("MaxRad", "Options"),
-			circles2, &x, &y, &heigth, &width);
+			&circles2);
 		//Rect roi2(x, y, heigth, width);
 		
-		StereoMatch(t,gframe1,gframe2/*,roi1,roi2*/);
+		//StereoMatch(t,gframe1,gframe2/*,roi1,roi2*/);
 
 		imshow("capture1", gframe1);
 		imshow("capture2", gframe2);
