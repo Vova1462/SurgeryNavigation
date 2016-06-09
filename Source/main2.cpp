@@ -8,19 +8,37 @@
 using namespace std;
 using namespace cv;
 
-static bool ReadStringList(const string& filename, vector<string>& l)
+static void FindChessCorners(bool *found, Mat img, vector<vector<Point2f>> *imagePoints, Size boardSize, vector<Point2f> *corners,int k, int j)
 {
-	l.resize(0);
-	FileStorage fs(filename, FileStorage::READ);
-	if (!fs.isOpened())
-		return false;
-	FileNode n = fs.getFirstTopLevelNode();
-	if (n.type() != FileNode::SEQ)
-		return false;
-	FileNodeIterator it = n.begin(), it_end = n.end();
-	for (; it != it_end; ++it)
-		l.push_back((string)*it);
-	return true;
+	Mat gimg(img.rows, img.cols, CV_8UC1);
+	const int maxScale = 2;
+	if (img.empty())
+		return;
+	 corners = &imagePoints[k][j];//определиться с k,j
+	for (int scale = 1; scale <= maxScale; scale++)
+	{
+		Mat timg;
+		if (scale == 1)
+			timg = img;
+		else
+			resize(img, timg, Size(), scale, scale);
+		*found = findChessboardCorners(timg, boardSize, *corners,
+			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
+		if (found)
+		{
+			if (scale > 1)
+			{
+				Mat cornersMat(*corners);
+				cornersMat *= 1. / scale;
+			}
+			break;
+		}
+	}
+	cvtColor(img, gimg, CV_BGR2GRAY);
+
+	cornerSubPix(gimg, *corners, Size(11, 11), Size(-1, -1),
+		TermCriteria(TermCriteria::COUNT + TermCriteria::EPS,
+			30, 0.01));
 }
 
 static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
@@ -31,156 +49,92 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	float squareSize = 1.0;
 	Size boardSize;
 	bool displayCorners = true, useCalibrated = false, showRectified = true;
-
-	cout << "Do you have image list?Y/N\n";
-	cin >> a;
-
-	if (a == 'Y')
-	{
-		cout << "Please, write number of corners in the horizontal, in the vertical and path to image list\n";
-		cin>>w>>h>>str;
-	}
-	else
-	{
-		namedWindow("capture1", 1);
-		namedWindow("capture2", 1);
-		int capture_number = 0;
-		Mat frame1, frame2;
-		for (;;)
-		{
-			
-			camera1 >> frame1;
-			camera2 >> frame2;
-
-			imshow("capture1", frame1);
-			imshow("capture2", frame2);
-			vector<int> compression_params;
-			compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
-			compression_params.push_back(9);
-			char c = waitKey(33);
-			const string prefix_left("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\left");
-			const string prefix_right("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\right");
-			const string postfix(".png");
-			if (c == 13)
-			{
-				imwrite(prefix_left + to_string(capture_number) + postfix, frame1, compression_params);
-				imwrite(prefix_right + to_string(capture_number) + postfix, frame2, compression_params);
-				++capture_number;
-			}
-			if (c == 27) break;
-		}
-		cout << "Please, write number of corners in the horizontal, in the vertical and path to image list\n";
-		cin >> w>>h;
-		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\image_list.xml";
-	}
+	
 	vector<string> imagelist;
-	bool ok = ReadStringList(str, imagelist);
-	if (!ok || imagelist.empty())
-	{
-		cout << "can not open " << str << " or the string list is empty" << endl;
-		return;
-	}
+	int i, j, k;
 
 	
-	boardSize.width = w;
-	boardSize.height = h;
-
-	if (imagelist.size() % 2 != 0)
-	{
-		cout << "Error: the image list contains odd (non-even) number of elements\n";
-		return;
-	}
-
-	const int maxScale = 2;
+	vector<Mat> goodImageList;
 	// ARRAY AND VECTOR STORAGE:
 
 	vector<vector<Point2f> > imagePoints[2];
 	vector<vector<Point3f> > objectPoints;
 	Size imageSize;
 
-	int i, j, k, nimages = (int)imagelist.size() / 2;
+	
 
-	imagePoints[0].resize(nimages);
-	imagePoints[1].resize(nimages);
-	vector<string> goodImageList;
+	cout << "Write number of corners in the horizonta and in the vertical\n";
+	cin >> w>> h;
+	int number_of_chessboards = 12;
+	bool found1, found2 = false;
 
-	for (i = j = 0; i < nimages; i++)
+	boardSize.width = w;
+	boardSize.height = h;
+
+	namedWindow("capture1", 1);
+	namedWindow("capture2", 1);
+
+	imagePoints[0].resize(number_of_chessboards);
+	imagePoints[1].resize(number_of_chessboards);
+
+	Mat frame1, frame2;
+	cout << "Press ESC to run calibration\n";
+	for (;;)
 	{
-		for (k = 0; k < 2; k++)
+		
+		camera1 >> frame1;
+		camera2 >> frame2;
+
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
+		
+		char c = waitKey(50);
+		if (c == 27)
 		{
-			const string& filename = imagelist[i * 2 + k];
-			Mat img = imread(filename, 0);
-			if (img.empty())
-				break;
-			if (imageSize == Size())
-				imageSize = img.size();
-			else if (img.size() != imageSize)
+			for (i = j = 0; i < number_of_chessboards; )
 			{
-				cout << "The image " << filename << " has the size different from the first image size. Skipping the pair\n";
-				break;
-			}
-			bool found = false;
-			vector<Point2f>& corners = imagePoints[k][j];
-			for (int scale = 1; scale <= maxScale; scale++)
-			{
-				Mat timg;
-				if (scale == 1)
-					timg = img;
+				
+				camera1 >> frame1;
+				camera2 >> frame2;
+				if (frame1.size() == frame2.size())
+					imageSize = frame1.size();
 				else
-					resize(img, timg, Size(), scale, scale);
-				found = findChessboardCorners(timg, boardSize, corners,
-					CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
-				if (found)
 				{
-					if (scale > 1)
-					{
-						Mat cornersMat(corners);
-						cornersMat *= 1. / scale;
-					}
+					cout << "The image has the size different from the first image size. Skipping the pair\n";
 					break;
 				}
+				vector<Point2f> &corners= imagePoints[0][j];
+				FindChessCorners(&found1, frame1, imagePoints, boardSize, &corners, 0, j);
+				Mat cimg;
+				drawChessboardCorners(frame1, boardSize, corners, found1);
+				double sf = 640. / MAX(frame1.rows, frame1.cols);
+				resize(frame1, cimg, Size(), sf, sf);
+				imshow("corners", frame1);
+
+				corners = imagePoints[1][j];
+				FindChessCorners(&found2, frame2, imagePoints, boardSize, &corners, 1, j);
+				drawChessboardCorners(frame2, boardSize, corners, found2);
+				sf = 640. / MAX(frame2.rows, frame2.cols);
+				resize(frame2, cimg, Size(), sf, sf);
+				imshow("corners", cimg);
+				
+				
+				if (found1&&found2)
+				{
+					goodImageList.push_back(frame1);
+					goodImageList.push_back(frame2);
+					j++;i++;
+				}
 			}
-			if (displayCorners)
-			{
-				cout << filename << endl;
-				Mat cimg, cimg1;
-				cvtColor(img, cimg, COLOR_GRAY2BGR);
-				drawChessboardCorners(cimg, boardSize, corners, found);
-				double sf = 640. / MAX(img.rows, img.cols);
-				resize(cimg, cimg1, Size(), sf, sf);
-				imshow("corners", cimg1);
-				char c = (char)waitKey(500);
-				if (c == 27 || c == 'q' || c == 'Q') //Allow ESC to quit
-					exit(-1);
-			}
-			else
-				putchar('.');
-			if (!found)
-				break;
-			cornerSubPix(img, corners, Size(11, 11), Size(-1, -1),
-				TermCriteria(TermCriteria::COUNT + TermCriteria::EPS,
-					30, 0.01));
-		}
-		if (k == 2)
-		{
-			goodImageList.push_back(imagelist[i * 2]);
-			goodImageList.push_back(imagelist[i * 2 + 1]);
-			j++;
+			break;
 		}
 	}
-	cout << j << " pairs have been successfully detected.\n";
-	nimages = j;
-	if (nimages < 2)
-	{
-		cout << "Error: too little pairs to run the calibration\n";
-		return;
-	}
+	
+	imagePoints[0].resize(number_of_chessboards);
+	imagePoints[1].resize(number_of_chessboards);
+	objectPoints.resize(number_of_chessboards);
 
-	imagePoints[0].resize(nimages);
-	imagePoints[1].resize(nimages);
-	objectPoints.resize(nimages);
-
-	for (i = 0; i < nimages; i++)
+	for (i = 0; i < number_of_chessboards; i++)
 	{
 		for (j = 0; j < boardSize.height; j++)
 			for (k = 0; k < boardSize.width; k++)
@@ -215,7 +169,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 	double err = 0;
 	int npoints = 0;
 	vector<Vec3f> lines[2];
-	for (i = 0; i < nimages; i++)
+	for (i = 0; i < number_of_chessboards; i++)
 	{
 		int npt = (int)imagePoints[0][i].size();
 		Mat imgpt[2];
@@ -292,7 +246,7 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		vector<Point2f> allimgpt[2];
 		for (k = 0; k < 2; k++)
 		{
-			for (i = 0; i < nimages; i++)
+			for (i = 0; i < number_of_chessboards; i++)
 				std::copy(imagePoints[k][i].begin(), imagePoints[k][i].end(), back_inserter(allimgpt[k]));
 		}
 		F = findFundamentalMat(Mat(allimgpt[0]), Mat(allimgpt[1]), FM_8POINT, 0, 0);
@@ -327,11 +281,11 @@ static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 		canvas.create(h * 2, w, CV_8UC3);
 	}
 
-	for (i = 0; i < nimages; i++)
+	for (i = 0; i < number_of_chessboards; i++)
 	{
 		for (k = 0; k < 2; k++)
 		{
-			Mat img = imread(goodImageList[i * 2 + k], 0), rimg, cimg;
+			Mat img = goodImageList[i * 2 + k], rimg, cimg;
 			remap(img, rimg, rmap[k][0], rmap[k][1], INTER_LINEAR);
 			cvtColor(rimg, cimg, COLOR_GRAY2BGR);
 			Mat canvasPart = !isVerticalStereo ? canvas(Rect(w*k, 0, w, h)) : canvas(Rect(0, h*k, w, h));
@@ -394,7 +348,6 @@ static void CreatROI(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2, Size 
 	remap(*capture1, img1rect, rect_map[0][0], rect_map[0][1], INTER_LINEAR);
 	remap(*capture2, img2rect, rect_map[1][0], rect_map[0][1], INTER_LINEAR);
 	
-	//Обрезка изображений
 	Mat croped_img1, croped_img2;
 	if (roi1->area() <= roi2->area())
 	{
@@ -422,7 +375,8 @@ static void CreateDisparityMap(Ptr<StereoBM> bm,Mat capture1, Mat capture2,Mat *
 		bm->setPreFilterCap(param_for_stereomatch[0]);
 	if (param_for_stereomatch[1] % 2 != 0 && param_for_stereomatch[1] > 3)
 		bm->setBlockSize(param_for_stereomatch[1]);
-
+	else
+		bm->setBlockSize(8);
 
 		
 	bm->setMinDisparity(0);
@@ -568,11 +522,13 @@ int main()
 			frame2 = imread(img_prefix + "2_2" + postfix, 1);
 		}
 		
-
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
 		//Обрезка и исправление искажений на изображениях
 		CreatROI(&frame1,&frame2,&roi1,&roi2,frame1.size());
 
-		
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
 		gframe1.create(frame1.rows, frame1.cols, CV_8UC1);
 		gframe2.create(frame2.rows, frame2.cols, CV_8UC1);
 
@@ -580,16 +536,16 @@ int main()
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 		//Загрузка шаблона
 		templ = imread(templ_prefix + to_string(4) + postfix, 0);
-
 		//Поиск кругов и создание изображений для поиска соответствия
 		FindCircles(gframe1, templ,minval,maxval,minloc,maxloc, search_metod,&match_img1);
 		FindCircles(gframe2, templ, minval, maxval, minloc, maxloc, search_metod, &match_img2);
 		
 		//Поиск соответствия между изображениями
-		StereoMatch(0, gframe2,gframe1, roi1, roi2);
+		StereoMatch(0, gframe1, gframe2, roi1, roi2);
 		
-		imshow("capture1", frame1);
-		imshow("capture2", frame2);
+		
+
+		
 
 		char c = waitKey(100);
 		if (c == 27) break;
