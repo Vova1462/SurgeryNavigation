@@ -428,12 +428,10 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 
 	Ptr<StereoBM> bm = StereoBM::create(64, 21);
 
-
-
 			if (*(parametrs+0) > 0)
 				bm->setPreFilterCap(*(parametrs+0));
-			if (*(parametrs+1) % 2 != 0 && *(parametrs+1) > 3)
-				bm->setBlockSize(*(parametrs+1));
+			if (*(parametrs+1) > 1)
+				bm->setBlockSize(*(parametrs+1) * 2 + 1);
 			bm->setMinDisparity(0);
 			if (*(parametrs+2) > 0)
 				bm->setNumDisparities(*(parametrs+2) * 16);
@@ -448,40 +446,24 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 			vdisp.convertTo(*disp, CV_8U, 1 / 16.);
 }
 
-static void FindCircles(Mat capture1, int thresholdofCanny, int thresholdofstoradge, int dp,int mindist, int minrad,int maxrad,
-	vector<Vec3f> circles)
+static void FindCircles(Mat capture1, int *params,	vector<Vec3f> *circles)
 {
 	Mat blured;
-	int xmin=0, ymin=0, xmax=0, ymax=0;
-	medianBlur(capture1, blured, 21);
+	medianBlur(capture1, blured, *(params+5)*2+1);
 	//Canny(blured, capture1, 100, 100);
-	HoughCircles(blured, circles, HOUGH_GRADIENT,
-		dp, mindist, thresholdofCanny+100, thresholdofstoradge, minrad, maxrad);
+	HoughCircles(blured, *circles, HOUGH_GRADIENT,
+		1, *(params + 0), *(params+1)+100, *(params + 2), *(params + 3), *(params + 4));
 	
 	Vec3f coords_and_radius;//Вектор для чтения координат окружности и радиуса, при отрисовке
 	
 	int vec_nums[4]; //Массив для хранения номеров векторов, которые хранят радиус окружности
 
-	for (size_t i = 0; i < circles.size(); i++)
+	for (size_t i = 0; i < circles->size(); i++)
 	{
-		coords_and_radius = circles[i];
+		coords_and_radius = *(circles->begin()+i);
 		circle(capture1, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
 		/*circle(capture1, Point(c[0], c[1]), 2, Scalar(0, 255, 0), 3, LINE_AA);*/
-
-		//Поиск максимальных и минимальных координат центров окружностей
-		if (xmax <= coords_and_radius[0])
-		{xmax = coords_and_radius[0];vec_nums[0] = i;}
-		if (ymax <= coords_and_radius[1])
-		{ymax = coords_and_radius[1];vec_nums[1] = i;}
-		if (xmin >= coords_and_radius[0])
-		{xmin = coords_and_radius[0];vec_nums[2] = i;}
-		if (ymin >= coords_and_radius[1])
-		{ymin = coords_and_radius[1];vec_nums[3] = i;}
 	}
-		/*x = floor(xmin -2*circles[t[2]][2]);
-		y = floor(ymin - 2 * circles[t[3]][2]);
-		heigth = ceil(xmax + 2 * circles[t[0]][2] - xmin + 2 * circles[t[2]][2]);
-		width = ceil(ymax + 2 * circles[t[1]][2] - ymin + 2 * circles[t[3]][2]);*/
 }
 
 
@@ -489,10 +471,12 @@ static void FindCircles(Mat capture1, int thresholdofCanny, int thresholdofstora
 int main()
 {
 	char a;
-	Mat frame1, frame2,gframe1, gframe2, disp;
+	Mat frame1, frame2, gframe1, gframe2, disp;
 	const string img_prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Images\\";
 	const string postfix = ".png";
+	Vec3f coords_and_radius;
 	Rect roi1, roi2;
+	double depth=0, baseline=62, focal_length=4.1 , sencorsize=0.005;
 
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
@@ -510,32 +494,45 @@ int main()
 	}
 
 	vector<Vec3f> circles1, circles2;
-	int thresholdofCanny = 23, thresholdofstoradge = 21, t = 0, dp = 1, minrad = 9, maxrad = 40, mindist = 47;
-	int parametrs_for_matching[5];
 
+	int parametrs_for_matching[5],parametrs_for_hough[6];
+
+	//Инициализация начальных параметров для поиска неравенства
 	parametrs_for_matching[0] = 31;
 	parametrs_for_matching[1] = 9;
-	parametrs_for_matching[2] = 16;
+	parametrs_for_matching[2] = 9;
 	parametrs_for_matching[3] = 16;
 	parametrs_for_matching[4] = 0;
 
+	//Инициализация начальных параметров для поиска окружностей
+	parametrs_for_hough[0] = 23;
+	parametrs_for_hough[1] = 21;
+	parametrs_for_hough[2] = 40;
+	parametrs_for_hough[3] = 9;
+	parametrs_for_hough[4] = 47;
+	parametrs_for_hough[5] = 7;
+
+
+	//Создание окон для отображения информации
 	namedWindow("capture1", 1);
 	namedWindow("capture2", 1);
-	namedWindow("Options", 1);
-	namedWindow("Parametars", 1);
+	namedWindow("Parameters for Hough", 1);
+	namedWindow("Parameters for StereoMatching", 1);
 	
-	createTrackbar("Threshold", "Options", &thresholdofCanny, 100, 0);
-	createTrackbar("Thresholdofstoradge", "Options", &thresholdofstoradge, 25, 0);
-	createTrackbar("dp", "Options", &dp, 50, 0);
-	createTrackbar("Mindist", "Options", &mindist, 50, 0);
-	createTrackbar("MinRad", "Options", &minrad, 30, 0);
-	createTrackbar("MaxRad", "Options", &maxrad, 80, 0);
+	//Создание ползунков для поиска окружностей
+	createTrackbar("Threshold", "Parameters for Hough", &parametrs_for_hough[0], 100, 0);
+	createTrackbar("Thresholdofstoradge", "Parameters for Hough", &parametrs_for_hough[1], 25, 0);
+	createTrackbar("Mindist", "Parameters for Hough", &parametrs_for_hough[2], 50, 0);
+	createTrackbar("MinRad", "Parameters for Hough", &parametrs_for_hough[3], 30, 0);
+	createTrackbar("MaxRad", "Parameters for Hough", &parametrs_for_hough[4], 80, 0);
+	createTrackbar("Blured", "Parameters for Hough", &parametrs_for_hough[5], 15, 0);
 
-	createTrackbar("setPreFilterCap", "Parametars", &parametrs_for_matching[0], 63);
-	createTrackbar("setBlockSize", "Parametars", &parametrs_for_matching[1], 100);
-	createTrackbar("setTextureThreshold", "Parametars", &parametrs_for_matching[2], 20);
-	createTrackbar("setNumDisparities", "Parametars", &parametrs_for_matching[3], 20);
-	createTrackbar("setUniquenessRatio", "Parametars", &parametrs_for_matching[4], 20);
+	//Создание ползунков для поиска неравенства
+	createTrackbar("setPreFilterCap", "Parameters for StereoMatching", &parametrs_for_matching[0], 63);
+	createTrackbar("setBlockSize", "Parameters for StereoMatching", &parametrs_for_matching[1], 50);
+	createTrackbar("setTextureThreshold", "Parameters for StereoMatching", &parametrs_for_matching[2], 20);
+	createTrackbar("setNumDisparities", "Parameters for StereoMatching", &parametrs_for_matching[3], 20);
+	createTrackbar("setUniquenessRatio", "Parameters for StereoMatching", &parametrs_for_matching[4], 20);
 
 
 	bool first_time_matching = true;
@@ -551,49 +548,52 @@ int main()
 			frame1 = imread(img_prefix + "1_2" + postfix, 1);
 			frame2 = imread(img_prefix + "2_2" + postfix, 1);
 		}
+
+		//Исправление изображений
 		CreatROI(&frame1, &frame2, &roi1, &roi2, frame1.size());
 
 		gframe1.create(480, 640, CV_8UC1);
 		gframe2.create(480, 640, CV_8UC1);
 
+		//Конвертация изображений в градации серого
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
+		
+		
 
-		//исправить на Find в имени, сделать указатель на массив
-		FindCircles(gframe1,
-			getTrackbarPos("Threshold","Options"), 
-			getTrackbarPos("Thresholdofstoradge", "Options"), 
-			getTrackbarPos("dp", "Options"),
-			getTrackbarPos("Mindist", "Options"),
-			getTrackbarPos("MinRad", "Options"),
-			getTrackbarPos("MaxRad", "Options"),
-			circles1);
+		//Поиск маркеров
+		FindCircles(gframe1,parametrs_for_hough, &circles1);
 	
-		FindCircles(gframe2, 
-			getTrackbarPos("Threshold", "Options"), 
-			getTrackbarPos("Thresholdofstoradge", "Options"), 
-			getTrackbarPos("dp", "Options"), 
-			getTrackbarPos("Mindist", "Options"),
-			getTrackbarPos("MinRad", "Options"),
-			getTrackbarPos("MaxRad", "Options"),
-			circles2);
+		FindCircles(gframe2, parametrs_for_hough, &circles2);
+
+		//Задание параметров для поиска окружностей
+		parametrs_for_hough[0] = getTrackbarPos("Threshold", "Parameters for Hough");
+		parametrs_for_hough[1] = getTrackbarPos("Thresholdofstoradge", "Parameters for Hough");
+		parametrs_for_hough[2] = getTrackbarPos("Mindist", "Parameters for Hough");
+		parametrs_for_hough[3] = getTrackbarPos("MinRad", "Parameters for Hough");
+		parametrs_for_hough[4] = getTrackbarPos("MaxRad", "Parameters for Hough");
+		parametrs_for_hough[5] = getTrackbarPos("Blured", "Parameters for Hough");
+		
+		//Поиск карты неравенства
 		if (first_time_matching)
 			for (;;)
 			{
+				imshow("capture1", gframe1);
+				imshow("capture2", gframe2);
 				StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
 				imshow("disparity", disp);
 
-				parametrs_for_matching[0] = getTrackbarPos("setPreFilterCap", "Parametars");
-				parametrs_for_matching[1] = getTrackbarPos("setBlockSize", "Parametars");
-				parametrs_for_matching[2] = getTrackbarPos("setTextureThreshold", "Parametars");
-				parametrs_for_matching[3] = getTrackbarPos("setNumDisparities", "Parametars");
-				parametrs_for_matching[4] = getTrackbarPos("setUniquenessRatio", "Parametars");
+				parametrs_for_matching[0] = getTrackbarPos("setPreFilterCap", "Parameters for StereoMatching");
+				parametrs_for_matching[1] = getTrackbarPos("setBlockSize", "Parameters for StereoMatching");
+				parametrs_for_matching[2] = getTrackbarPos("setTextureThreshold", "Parameters for StereoMatching");
+				parametrs_for_matching[3] = getTrackbarPos("setNumDisparities", "Parameters for StereoMatching");
+				parametrs_for_matching[4] = getTrackbarPos("setUniquenessRatio", "Parameters for StereoMatching");
 
 				char c = (char)waitKey(60);
 				if (c == 27)
 				{
 					first_time_matching = false;
-					destroyWindow("Parametars");
+					destroyWindow("Parameters for StereoMatching");
 					break;
 				}
 			}
@@ -601,11 +601,23 @@ int main()
 		{
 			StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
 		}
+
+		//Отображение окружностей на карте глубины, подсчет расстояния и отображение на изображении
+		for (size_t i = 0; i < circles1.size(); i++)
+		{
+			coords_and_radius = circles1[i];
+			circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
+			circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 255, 0), 3, LINE_AA);
+			depth = ((baseline*focal_length) / (sencorsize*disp.at<uchar>(coords_and_radius[0], coords_and_radius[1])))*0.01;
+			putText(frame1, to_string(depth), Point(coords_and_radius[0], coords_and_radius[1]), 1, 1, Scalar(0, 0, 255));
+		}
+		
 		imshow("disparity", disp);
-		imshow("capture1", gframe1);
-		imshow("capture2", gframe2);
+		imshow("capture1", frame1);
+		imshow("capture2", frame2);
 		char c = waitKey(100);
 		if (c == 27) break;
 	}
+	destroyAllWindows();
 	return 0;
 }
