@@ -440,7 +440,7 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 			bm->setSpeckleWindowSize(100);
 			bm->setSpeckleRange(32);
 			bm->setDisp12MaxDiff(1);
-
+			//Вычисление карты глубины по предыдущем параметрам
 			bm->compute(capture1, capture2, vdisp);
 
 			vdisp.convertTo(*disp, CV_8U, 1 / 16.);
@@ -449,15 +449,18 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 static void FindCircles(Mat capture1, int *params,	vector<Vec3f> *circles)
 {
 	Mat blured;
+	//Сглаживание изображения, для уменьшения шума на изображении
 	medianBlur(capture1, blured, *(params+5)*2+1);
 	//Canny(blured, capture1, 100, 100);
+	//Поиск окружностей на изображении
 	HoughCircles(blured, *circles, HOUGH_GRADIENT,
 		1, *(params + 0), *(params+1)+100, *(params + 2), *(params + 3), *(params + 4));
 	
-	Vec3f coords_and_radius;//Вектор для чтения координат окружности и радиуса, при отрисовке
+	Vec3f coords_and_radius;//Вектор для хранения координат окружности и радиуса, при отрисовке
 	
-	int vec_nums[4]; //Массив для хранения номеров векторов, которые хранят радиус окружности
+	int vec_nums[4]; //Массив для хранения номеров векторов, храняobq радиус окружности
 
+	//Отрисовка окружностей на изображении
 	for (size_t i = 0; i < circles->size(); i++)
 	{
 		coords_and_radius = *(circles->begin()+i);
@@ -477,7 +480,9 @@ int main()
 	Vec3f coords_and_radius;
 	Rect roi1, roi2;
 	double depth=0, baseline=62, focal_length=4.1 , sencorsize=0.005;
+	int source_of_image = 0;
 
+	//Инициализация камер
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
 		return -1;
@@ -485,7 +490,7 @@ int main()
 	if (!cap2.isOpened())
 		return -2;
 
-	int source_of_image = 0;
+	
 	cout << "Do you need calibration?Y/N\n";
 	cin >> a;
 	if (a == 'Y')
@@ -538,6 +543,7 @@ int main()
 	bool first_time_matching = true;
 	for (;;)
 	{
+		//Метод для получения фотографий
 		if (source_of_image == 0)
 		{
 			cap1 >> frame1;
@@ -552,6 +558,7 @@ int main()
 		//Исправление изображений
 		CreatROI(&frame1, &frame2, &roi1, &roi2, frame1.size());
 
+		//Создания изображений
 		gframe1.create(480, 640, CV_8UC1);
 		gframe2.create(480, 640, CV_8UC1);
 
@@ -559,11 +566,8 @@ int main()
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 		
-		
-
 		//Поиск маркеров
 		FindCircles(gframe1,parametrs_for_hough, &circles1);
-	
 		FindCircles(gframe2, parametrs_for_hough, &circles2);
 
 		//Задание параметров для поиска окружностей
@@ -576,6 +580,7 @@ int main()
 		
 		//Поиск карты неравенства
 		if (first_time_matching)
+			//Подбор параметров для наилучшего отображения карты глубины
 			for (;;)
 			{
 				imshow("capture1", gframe1);
@@ -611,13 +616,15 @@ int main()
 			depth = ((baseline*focal_length) / (sencorsize*disp.at<uchar>(coords_and_radius[0], coords_and_radius[1])))*0.01;
 			putText(frame1, to_string(depth), Point(coords_and_radius[0], coords_and_radius[1]), 1, 1, Scalar(0, 0, 255));
 		}
-		
+		//Отображение полученных изображений
 		imshow("disparity", disp);
 		imshow("capture1", frame1);
 		imshow("capture2", frame2);
+		//Ожидание нажатия клавиши
 		char c = waitKey(100);
 		if (c == 27) break;
 	}
+
 	destroyAllWindows();
 	return 0;
 }
