@@ -471,7 +471,7 @@ static void FindCircles(Mat capture1, int *params,	vector<Vec3f> *circles)
 
 
 
-int main()
+int main(int argc, char** argv)
 {
 	char a;
 	Mat frame1, frame2, gframe1, gframe2, disp;
@@ -481,7 +481,9 @@ int main()
 	Rect roi1, roi2;
 	double depth=0, baseline=62, focal_length=4.1 , sencorsize=0.005;
 	int source_of_image = 0;
-
+	double fps = atof(argv[1]);
+	
+	
 	//Инициализация камер
 	VideoCapture cap1(2);
 	if (!cap1.isOpened())
@@ -490,13 +492,22 @@ int main()
 	if (!cap2.isOpened())
 		return -2;
 
-	
+
+
+	//Калибровка камер
 	cout << "Do you need calibration?Y/N\n";
 	cin >> a;
 	if (a == 'Y')
 	{
 		StereoCallibration(cap1,cap2);
 	}
+
+
+	//Настройка частоты захвата изображения
+	cap1.set(CV_CAP_PROP_FPS, fps);
+	cap2.set(CV_CAP_PROP_FPS, fps);
+	//fps=cap1.get(CV_CAP_PROP_FPS);
+
 
 	vector<Vec3f> circles1, circles2;
 
@@ -604,8 +615,9 @@ int main()
 			}
 		else
 		{
-			StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
+				StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
 		}
+
 
 		//Отображение окружностей на карте глубины, подсчет расстояния и отображение на изображении
 		for (size_t i = 0; i < circles1.size(); i++)
@@ -616,14 +628,19 @@ int main()
 			depth = ((baseline*focal_length) / (sencorsize*disp.at<uchar>(coords_and_radius[0], coords_and_radius[1])))*0.01;
 			putText(frame1, to_string(depth), Point(coords_and_radius[0], coords_and_radius[1]), 1, 1, Scalar(0, 0, 255));
 		}
+
+
 		//Отображение полученных изображений
 		imshow("disparity", disp);
 		imshow("capture1", frame1);
 		imshow("capture2", frame2);
+
+
 		//Ожидание нажатия клавиши
 		char c = waitKey(100);
 		if (c == 27) break;
 	}
+
 
 	destroyAllWindows();
 	return 0;
