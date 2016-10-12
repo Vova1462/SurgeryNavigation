@@ -7,7 +7,7 @@ int main()
 	VideoCapture camera1(2);
 	if (!camera1.isOpened())
 		return -1;
-	VideoCapture camera2(3);
+	VideoCapture camera2(0);
 	if (!camera2.isOpened())
 		return -2;
 
