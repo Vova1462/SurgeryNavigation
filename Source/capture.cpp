@@ -4,10 +4,10 @@ using namespace cv;
 
 int main()
 {
-	VideoCapture camera1(2);
+	VideoCapture camera1(0);
 	if (!camera1.isOpened())
 		return -1;
-	VideoCapture camera2(0);
+	VideoCapture camera2(2);
 	if (!camera2.isOpened())
 		return -2;
 
