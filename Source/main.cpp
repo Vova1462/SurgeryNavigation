@@ -403,11 +403,11 @@ static void GetCropedImage(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2,
 	
 	//Вычисление координат длz исправления искажений на изображниях
 	initUndistortRectifyMap(M1, D1, R1, P1, imgsize, CV_16SC2, rect_map[0][0], rect_map[0][1]);
-	initUndistortRectifyMap(M2, D2, R2, P2, imgsize, CV_16SC2, rect_map[1][0], rect_map[0][1]);
+	initUndistortRectifyMap(M2, D2, R2, P2, imgsize, CV_16SC2, rect_map[1][0], rect_map[1][1]);
 
 	//Перестраивает изображения для исправления оптических искажений
 	remap(*capture1, img1rect, rect_map[0][0], rect_map[0][1], INTER_LINEAR);
-	remap(*capture2, img2rect, rect_map[1][0], rect_map[0][1], INTER_LINEAR);
+	remap(*capture2, img2rect, rect_map[1][0], rect_map[1][1], INTER_LINEAR);
 
 	//Обрезка изображений
 	Mat croped_img1, croped_img2;
@@ -437,15 +437,15 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 
 	Ptr<StereoBM> bm = StereoBM::create(64, 21);
 
-			if (*(parametrs+0) > 0)
-				bm->setPreFilterCap(*(parametrs+0));
-			if (*(parametrs+1) > 1)
-				bm->setBlockSize(*(parametrs+1) * 2 + 1);
+			if (parametrs[0] > 0)
+				bm->setPreFilterCap(parametrs[0]);
+			if (parametrs[1] > 1)
+				bm->setBlockSize(parametrs[1] * 2 + 1);
 			bm->setMinDisparity(0);
-			if (*(parametrs+2) > 0)
-				bm->setNumDisparities(*(parametrs+2) * 16);
-			bm->setTextureThreshold(*(parametrs+3));
-			bm->setUniquenessRatio(*(parametrs+4));
+			if (parametrs[2] > 0)
+				bm->setNumDisparities(parametrs[2] * 16);
+			bm->setTextureThreshold(parametrs[3]);
+			bm->setUniquenessRatio(parametrs[4]);
 			bm->setSpeckleWindowSize(100);
 			bm->setSpeckleRange(32);
 			bm->setDisp12MaxDiff(1);
@@ -459,23 +459,16 @@ static void FindCircles(Mat capture1, int *params,	vector<Vec3f> *circles)
 {
 	Mat blured;
 	//Сглаживание изображения, для уменьшения шума на изображении
-	medianBlur(capture1, blured, *(params+5)*2+1);
+	medianBlur(capture1, blured, params[5]*2+1);
 	//Canny(blured, capture1, 100, 100);
 	//Поиск окружностей на изображении
 	HoughCircles(blured, *circles, HOUGH_GRADIENT,
-		1, *(params + 0), *(params+1)+100, *(params + 2), *(params + 3), *(params + 4));
-	
-	Vec3f coords_and_radius;//Вектор для хранения координат окружности и радиуса, при отрисовке
-	
-	int vec_nums[4]; //Массив для хранения номеров векторов, храняobq радиус окружности
-
-	//Отрисовка окружностей на изображении
-	for (size_t i = 0; i < circles->size(); i++)
-	{
-		coords_and_radius = *(circles->begin()+i);
-		circle(capture1, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
-		/*circle(capture1, Point(c[0], c[1]), 2, Scalar(0, 255, 0), 3, LINE_AA);*/
-	}
+		1, 
+		params[0], 
+		params[1]+100, 
+		params[2], 
+		params[3], 
+		params[4]);
 }
 
 
@@ -539,8 +532,6 @@ int main(int argc, char** argv)
 
 
 	//Создание окон для отображения информации
-	namedWindow("capture1", 1);
-	namedWindow("capture2", 1);
 	namedWindow("Parameters for Hough", 1);
 	namedWindow("Parameters for StereoMatching", 1);
 	
@@ -584,7 +575,6 @@ int main(int argc, char** argv)
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
 
-		visualisation.StartSetup(gframe1, gframe2,disp);
 
 		//Нормализация изображений
 		unsigned int bright_of_frame1 = 0, bright_of_frame2 = 0;
@@ -595,10 +585,10 @@ int main(int argc, char** argv)
 				bright_of_frame1 += gframe1.at<uchar>(j, i);
 				bright_of_frame2 += gframe2.at<uchar>(j, i);
 			}
-		difference_of_averadge_bright = abs((bright_of_frame1 / (640 * 480)) - (bright_of_frame2 / (640 * 480)));
+		difference_of_averadge_bright = bright_of_frame1 / bright_of_frame2+0.0001;
 		for (int i = 0; i < 640;i++)
 			for (int j = 0; j < 480;j++)
-				gframe1.at<uchar>(j, i) -= difference_of_averadge_bright;
+				gframe1.at<uchar>(j, i)= gframe1.at<uchar>(j, i)*difference_of_averadge_bright;
 
 		//Исправление изображений
 		GetCropedImage(&gframe1, &gframe2, &roi1, &roi2, gframe1.size(),&cx,&cy);
@@ -624,18 +614,16 @@ int main(int argc, char** argv)
 			//Подбор параметров на одном изображении для наилучшего отображения карты глубины
 			for (;;)
 			{
-				imshow("capture1", gframe1);
-				imshow("capture2", gframe2);
-				
 				parametrs_for_matching[0] = getTrackbarPos("setPreFilterCap", "Parameters for StereoMatching");
 				parametrs_for_matching[1] = getTrackbarPos("setBlockSize", "Parameters for StereoMatching");
 				parametrs_for_matching[2] = getTrackbarPos("setTextureThreshold", "Parameters for StereoMatching");
 				parametrs_for_matching[3] = getTrackbarPos("setNumDisparities", "Parameters for StereoMatching");
 				parametrs_for_matching[4] = getTrackbarPos("setUniquenessRatio", "Parameters for StereoMatching");
-				
-				StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
-				imshow("disparity", disp);
 
+
+				StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
+				
+				visualisation.Update(gframe1, gframe2, disp);
 				char c = (char)waitKey(60);
 				if (c == 27)
 				{
@@ -673,9 +661,7 @@ int main(int argc, char** argv)
 
 
 		//Отображение полученных изображений
-		imshow("disparity", disp);
-		imshow("capture1", frame1);
-		imshow("capture2", frame2);
+		visualisation.Update(gframe1, gframe2, disp);
 
 
 		//Ожидание нажатия клавиши
@@ -684,6 +670,6 @@ int main(int argc, char** argv)
 	}
 
 
-	destroyAllWindows();
+	visualisation.EndMainMode();
 	return 0;
 }

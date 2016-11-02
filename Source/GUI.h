@@ -7,9 +7,9 @@ namespace Visualisation {
 	class GUI {
 
 	public:
-		void StartSetup(Mat &frame1, Mat &frame2, Mat &disp);
+		void StartSetup();
 		void StartMainMode();
-		void Update();
+		void Update(Mat &frame1, Mat &frame2, Mat &disp);
 		void EndMainMode();
 
 	};
