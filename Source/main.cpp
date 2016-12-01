@@ -7,11 +7,8 @@
 
 #include"GUI.h"
 
-
-
 using namespace std;
 using namespace cv;
-using namespace Visualisation;
 
 static bool readStringList(const string& filename, vector<string>& l)
 {
@@ -27,7 +24,6 @@ static bool readStringList(const string& filename, vector<string>& l)
 		l.push_back((string)*it);
 	return true;
 }
-
 
 static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
 {
@@ -409,7 +405,7 @@ static void GetCropedImage(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2,
 	remap(*capture1, img1rect, rect_map[0][0], rect_map[0][1], INTER_LINEAR);
 	remap(*capture2, img2rect, rect_map[1][0], rect_map[1][1], INTER_LINEAR);
 
-	//Обрезка изображений
+	////Обрезка изображений
 	Mat croped_img1, croped_img2;
 	if (roi1->area() <= roi2->area())
 	{
@@ -428,7 +424,7 @@ static void GetCropedImage(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2,
 
 }
 
-static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
+static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int prefilter_cap,int block_size,int texture_threshold, int num_disparities, int uniquness_ratio)
 {
 
 
@@ -437,15 +433,15 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 
 	Ptr<StereoBM> bm = StereoBM::create(64, 21);
 
-			if (parametrs[0] > 0)
-				bm->setPreFilterCap(parametrs[0]);
-			if (parametrs[1] > 1)
-				bm->setBlockSize(parametrs[1] * 2 + 1);
+			if (prefilter_cap > 0)
+				bm->setPreFilterCap(prefilter_cap);
+			if (block_size > 1)
+				bm->setBlockSize(block_size * 2 + 1);
 			bm->setMinDisparity(0);
-			if (parametrs[2] > 0)
-				bm->setNumDisparities(parametrs[2] * 16);
-			bm->setTextureThreshold(parametrs[3]);
-			bm->setUniquenessRatio(parametrs[4]);
+			if (texture_threshold > 0)
+				bm->setNumDisparities(texture_threshold * 16);
+			bm->setTextureThreshold(num_disparities);
+			bm->setUniquenessRatio(uniquness_ratio);
 			bm->setSpeckleWindowSize(100);
 			bm->setSpeckleRange(32);
 			bm->setDisp12MaxDiff(1);
@@ -455,36 +451,35 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int *parametrs)
 			vdisp.convertTo(*disp, CV_8U, 1 / 16.);
 }
 
-static void FindCircles(Mat capture1, int *params,	vector<Vec3f> *circles)
+static void FindCircles(Mat capture, vector<Vec3f> *circles, int threshold, 
+						int threshold_of_storadge, int min_dist, int min_radius, 
+						int max_radius, int blur)
 {
 	Mat blured;
 	//Сглаживание изображения, для уменьшения шума на изображении
-	medianBlur(capture1, blured, params[5]*2+1);
+	medianBlur(capture, blured, blur*2+1);
 	//Canny(blured, capture1, 100, 100);
 	//Поиск окружностей на изображении
 	HoughCircles(blured, *circles, HOUGH_GRADIENT,
 		1, 
-		params[0], 
-		params[1]+100, 
-		params[2], 
-		params[3], 
-		params[4]);
+		threshold, 
+		threshold_of_storadge+100, 
+		min_dist, 
+		max_radius, 
+		min_radius);
 }
-
-
 
 int main(int argc, char** argv)
 {
+
 	char a;
-	Mat frame1, frame2, gframe1, gframe2, disp;
 	const string img_prefix = "C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\Images\\";
 	const string postfix = ".png";
 	Vec3f coords_and_radius;
 	Rect roi1, roi2;
-	double depth=0, baseline=atof(argv[2]), focal_length=4.1, sencor_elem_size=5.5, X=0, Y=0,cx=0,cy=0;
-	int source_of_image = 0;
+	double Z=0, baseline=atof(argv[2]), focal_length=4.1, sencor_elem_size=5.5, X=0, Y=0,cx=0,cy=0;
 	double fps = atof(argv[1]);
-	GUI visualisation;
+	GUI gui;
 	
 	//Инициализация камер
 	VideoCapture cap1(0);
@@ -494,8 +489,6 @@ int main(int argc, char** argv)
 	if (!cap2.isOpened())
 		return -2;
 
-
-
 	//Калибровка камер
 	cout << "Do you need calibration?Y/N\n";
 	cin >> a;
@@ -504,77 +497,41 @@ int main(int argc, char** argv)
 		StereoCallibration(cap1,cap2);
 	}
 
-
 	//Настройка частоты захвата изображения
 	cap1.set(CV_CAP_PROP_FPS, fps);
 	cap2.set(CV_CAP_PROP_FPS, fps);
 	//fps=cap1.get(CV_CAP_PROP_FPS);
 
 
-	vector<Vec3f> circles1, circles2;
-
 	int parametrs_for_matching[5],parametrs_for_hough[6];
 
-	//Инициализация начальных параметров для поиска неравенства
-	parametrs_for_matching[0] = 31;
-	parametrs_for_matching[1] = 9;
-	parametrs_for_matching[2] = 9;
-	parametrs_for_matching[3] = 16;
-	parametrs_for_matching[4] = 0;
+	vector<Vec3f> circles1, circles2;
 
-	//Инициализация начальных параметров для поиска окружностей
-	parametrs_for_hough[0] = 23;
-	parametrs_for_hough[1] = 21;
-	parametrs_for_hough[2] = 40;
-	parametrs_for_hough[3] = 9;
-	parametrs_for_hough[4] = 47;
-	parametrs_for_hough[5] = 7;
+	bool setup_needed = true;
+	const int image_height = 480;
+	const int image_width = 640;
+	Mat frame1{ image_width,image_height,CV_16SC3 }, 
+				frame2{ frame1 }, gframe1{ frame1 }, 
+				gframe2{ frame1 }, disp{frame1};
 
+	gui.StartSetup(&gframe1, &gframe2, &disp);
 
-	//Создание окон для отображения информации
-	namedWindow("Parameters for Hough", 1);
-	namedWindow("Parameters for StereoMatching", 1);
-	
-	//Создание ползунков для поиска окружностей
-	createTrackbar("Threshold", "Parameters for Hough", &parametrs_for_hough[0], 100, 0);
-	createTrackbar("Thresholdofstoradge", "Parameters for Hough", &parametrs_for_hough[1], 25, 0);
-	createTrackbar("Mindist", "Parameters for Hough", &parametrs_for_hough[2], 50, 0);
-	createTrackbar("MinRad", "Parameters for Hough", &parametrs_for_hough[3], 30, 0);
-	createTrackbar("MaxRad", "Parameters for Hough", &parametrs_for_hough[4], 80, 0);
-	createTrackbar("Blured", "Parameters for Hough", &parametrs_for_hough[5], 15, 0);
-
-	//Создание ползунков для поиска неравенства
-	createTrackbar("setPreFilterCap", "Parameters for StereoMatching", &parametrs_for_matching[0], 63);
-	createTrackbar("setBlockSize", "Parameters for StereoMatching", &parametrs_for_matching[1], 50);
-	createTrackbar("setTextureThreshold", "Parameters for StereoMatching", &parametrs_for_matching[2], 20);
-	createTrackbar("setNumDisparities", "Parameters for StereoMatching", &parametrs_for_matching[3], 20);
-	createTrackbar("setUniquenessRatio", "Parameters for StereoMatching", &parametrs_for_matching[4], 20);
-
-
-	bool first_time_matching = true;
+	// Основной цикл
 	for (;;)
 	{
-		//Метод для получения фотографий
-		if (source_of_image == 0)
-		{
-			cap1 >> frame1;
-			cap2 >> frame2;
-		}
-		else if (source_of_image == 1)
-		{
-			frame1 = imread(img_prefix + "1_2" + postfix, 1);
-			frame2 = imread(img_prefix + "2_2" + postfix, 1);
-		}
+		cap1 >> frame1;
+		cap2 >> frame2;
+
+		//frame1 = imread(img_prefix + "1_2" + postfix, 1);
+		//frame2 = imread(img_prefix + "2_2" + postfix, 1);
+
 		//Создания изображений
 		gframe1.create(480, 640, CV_8UC1);
 		gframe2.create(480, 640, CV_8UC1);
 
-	
-
 		//Конвертация изображений в градации серого
 		cvtColor(frame1, gframe1, CV_BGR2GRAY);
 		cvtColor(frame2, gframe2, CV_BGR2GRAY);
-
 
 		//Нормализация изображений
 		unsigned int bright_of_frame1 = 0, bright_of_frame2 = 0;
@@ -597,79 +554,79 @@ int main(int argc, char** argv)
 		medianBlur(gframe1, gframe1, 3);
 		medianBlur(gframe2, gframe2, 3);
 
-		//Задание параметров для поиска окружностей
-		parametrs_for_hough[0] = getTrackbarPos("Threshold", "Parameters for Hough");
-		parametrs_for_hough[1] = getTrackbarPos("Thresholdofstoradge", "Parameters for Hough");
-		parametrs_for_hough[2] = getTrackbarPos("Mindist", "Parameters for Hough");
-		parametrs_for_hough[3] = getTrackbarPos("MinRad", "Parameters for Hough");
-		parametrs_for_hough[4] = getTrackbarPos("MaxRad", "Parameters for Hough");
-		parametrs_for_hough[5] = getTrackbarPos("Blured", "Parameters for Hough");
-
 		//Поиск маркеров
-		FindCircles(gframe1,parametrs_for_hough, &circles1);
-		FindCircles(gframe2, parametrs_for_hough, &circles2);
+		FindCircles(gframe1, &gui.circles, 
+					gui.threshold, 
+					gui.threshold_of_storadge, 
+					gui.mindist, 
+					gui.minrad, 
+					gui.maxrad, 
+					gui.blur);
+		/*FindCircles(gframe2, &circles2, 
+					gui.threshold,
+					gui.threshold_of_storadge,
+					gui.mindist,
+					gui.minrad,
+					gui.maxrad,
+					gui.blur);*/
 				
+
+
 		//Поиск карты неравенства
-		if (first_time_matching)
+		if (setup_needed)
 			//Подбор параметров на одном изображении для наилучшего отображения карты глубины
-			for (;;)
-			{
-				parametrs_for_matching[0] = getTrackbarPos("setPreFilterCap", "Parameters for StereoMatching");
-				parametrs_for_matching[1] = getTrackbarPos("setBlockSize", "Parameters for StereoMatching");
-				parametrs_for_matching[2] = getTrackbarPos("setTextureThreshold", "Parameters for StereoMatching");
-				parametrs_for_matching[3] = getTrackbarPos("setNumDisparities", "Parameters for StereoMatching");
-				parametrs_for_matching[4] = getTrackbarPos("setUniquenessRatio", "Parameters for StereoMatching");
+			for (;;) {
 
-
-				StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
+				StereoMatch(gframe1, gframe2, &disp, gui.prefilter_cap,
+													 gui.block_size,
+													 gui.texture_threshold,
+													 gui.num_disparities,
+													 gui.uniqueness_ratio);
 				
-				visualisation.Update(gframe1, gframe2, disp);
-				char c = (char)waitKey(60);
-				if (c == 27)
-				{
-					first_time_matching = false;
-					destroyWindow("Parameters for StereoMatching");
+				gui.UpdateSetup();
+				
+				// .....
+				if (waitKey(60) == 27) {
+					setup_needed = false;
+					gui.EndSetup();
+					gui.StartMainMode();
 					break;
 				}
 			}
-		else
-		{
-				StereoMatch(gframe1, gframe2, &disp, parametrs_for_matching);
-		}
+
+		// ...
+		StereoMatch(gframe1, gframe2, &disp, gui.prefilter_cap,
+											 gui.block_size,
+											 gui.texture_threshold,
+											 gui.num_disparities,
+											 gui.uniqueness_ratio);
+
 
 		//Вычисление поля зрения камеры
 		double field_of_view = 2 * atan(sencor_elem_size / 2 * focal_length);
 
-		//Отображение окружностей на карте глубины, подсчет расстояния и отображение на изображении
-		for (size_t i = 0; i < circles1.size(); i++)
+		// Подсчет координат на изображении
+		for (size_t i = 0; i < gui.circles.size(); i++)
 		{
 			//Отрисовка окружностей
-			coords_and_radius = circles1[i];
-			circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
-			circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 255, 0), 3, LINE_AA);
+			//coords_and_radius = circles1[i];
+			//circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
+			//circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 255, 0), 3, LINE_AA);
 			
 			//Вычисление расстояний
-			depth = ((baseline*focal_length) / (sencor_elem_size*disp.at<uchar>(coords_and_radius[1], coords_and_radius[0])));
-			X= 2 * sin(field_of_view / 2)*depth / gframe1.cols*(coords_and_radius[0]-cx);
-			Y = 2 * sin(field_of_view / 2)*depth / gframe1.rows*(coords_and_radius[1] - cy);
-
-			//Отрисовка текста
-			putText(frame1, to_string(depth), Point(coords_and_radius[0], coords_and_radius[1]), 1, 1, Scalar(0, 0, 255));
-			putText(frame1, to_string(X), Point(coords_and_radius[0], coords_and_radius[1] + 15), 1, 1, Scalar(0, 0, 255));
-			putText(frame1, to_string(Y), Point(coords_and_radius[0], coords_and_radius[1]+30), 1, 1, Scalar(0, 0, 255));
+			Z = ((baseline*focal_length) / (sencor_elem_size*disp.at<uchar>(gui.circles[i][0], gui.circles[i][1])));
+			X= 2 * sin(field_of_view / 2)*Z / gframe1.cols*(gui.circles[i][0] -cx);
+			Y = 2 * sin(field_of_view / 2)*Z / gframe1.rows*(gui.circles[i][1] - cy);
 		}
 
-
 		//Отображение полученных изображений
-		visualisation.Update(gframe1, gframe2, disp);
-
+		gui.UpdateMainMode();
 
 		//Ожидание нажатия клавиши
 		char c = waitKey(100);
 		if (c == 27) break;
 	}
 
-
-	visualisation.EndMainMode();
+	gui.EndMainMode();
 	return 0;
 }
