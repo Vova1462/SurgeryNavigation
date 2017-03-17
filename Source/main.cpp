@@ -3,14 +3,13 @@
 #include <string>
 #include <iostream>
 #include <iterator> 
-
-
+#include <opencv2\opencv.hpp>
 #include"GUI.h"
 
 using namespace std;
 using namespace cv;
 
-static bool readStringList(const string& filename, vector<string>& l)
+//static bool readStringList(const string& filename, vector<string>& l)
 {
 	l.resize(0);
 	FileStorage fs(filename, FileStorage::READ);
@@ -25,342 +24,233 @@ static bool readStringList(const string& filename, vector<string>& l)
 	return true;
 }
 
-static void StereoCallibration(VideoCapture camera1, VideoCapture camera2)
-{
-	char a;
-	string str="";
-	int w, h;
-	float squareSize = 1.0;
-	Size boardSize;
-	bool displayCorners = true, useCalibrated = false, showRectified = true;
+enum { DETECTION = 0, CAPTURING = 1, CALIBRATED = 2 };
 
-	cout << "Do you have image list?Y/N\n";
-	cin >> a;
-
-	if (a == 'Y')
-	{
-		cout << "Please, write number of corners in the horizontal, in the vertical and path to image list\n";
-		cin>>w>>h>>str;
+void SaveParams(Mat &M1, Mat &M2, Mat &D1, Mat &D2, Mat &R, Mat &T, Mat &R1, Mat &R2,Mat &P1, Mat &P2, Mat &Q) {
+	FileStorage ifs("intrinsics.yml", FileStorage::WRITE),efs("extrinsics.yml",FileStorage::WRITE);
+	if (ifs.isOpened()) {
+		ifs << "M1" << M1 << "D1" << D1 << "M2" << M2 << "D2" << D2;
+		ifs.release();
 	}
 	else
 	{
-		namedWindow("capture1", 1);
-		namedWindow("capture2", 1);
-		int capture_number = 0;
-
-		for (;;)
-		{
-			Mat frame1, frame2;
-			camera1 >> frame1;
-			camera2 >> frame2;
-
-			imshow("capture1", frame1);
-			imshow("capture2", frame2);
-			vector<int> compression_params;
-			compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
-			compression_params.push_back(9);
-			char c = waitKey(33);
-			const string prefix_left("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\left");
-			const string prefix_right("C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\right");
-			const string postfix(".png");
-			if (c == 13)
-			{
-				imwrite(prefix_left + to_string(capture_number) + postfix, frame1, compression_params);
-				imwrite(prefix_right + to_string(capture_number) + postfix, frame2, compression_params);
-				++capture_number;
-			}
-			if (c == 27) break;
-		}
-		cout << "Please, write number of corners in the horizontal, in the vertical and path to image list\n";
-		cin >> w>>h;
-		str = "C:\\dev\\MyProjects\\SurgeryNavigation\\Calibration\\image_list.xml";
+		cout << "Error: can not save the intrinsics parametrs\n";
 	}
-	vector<string> imagelist;
-	bool ok = readStringList(str, imagelist);
-	if (!ok || imagelist.empty())
-	{
-		cout << "can not open " << str << " or the string list is empty" << endl;
-		return;
+	if (efs.isOpened()) {
+		efs << "R" << R << "T" << T << "R1" << R1 << "R2" << R2 
+			<< "P1" << P1 << "P2" << P2 << "Q" << Q;
 	}
+	else {
+		cout << "Error: can not save the extrinsics parametrs\n";
+	}
+}
 
+
+static void Calibration(VideoCapture camera_left, VideoCapture camera_right, int number_of_good_boards) {
+
+	String WINDOW_NAME = "Window calibration";
+
+	double square_size = 0.1;
+	Size board_size, img_size;
+	//Массивы для хранения изображения
+	Mat img_left, img_right, display_area;
 	
-	boardSize.width = w;
-	boardSize.height = h;
-
-	if (imagelist.size() % 2 != 0)
-	{
-		cout << "Error: the image list contains odd (non-even) number of elements\n";
-		return;
-	}
-
-	const int maxScale = 2;
-	// ARRAY AND VECTOR STORAGE:
-
-	vector<vector<Point2f> > imagePoints[2];
-	vector<vector<Point3f> > objectPoints;
-	Size imageSize;
-
-	int i, j, k, nimages = (int)imagelist.size() / 2;
-
-	imagePoints[0].resize(nimages);
-	imagePoints[1].resize(nimages);
-	vector<string> goodImageList;
-
-	for (i = j = 0; i < nimages; i++)
-	{
-		for (k = 0; k < 2; k++)
-		{
-			const string& filename = imagelist[i * 2 + k];
-			Mat img = imread(filename, 0);
-			if (img.empty())
-				break;
-			if (imageSize == Size())
-				imageSize = img.size();
-			else if (img.size() != imageSize)
-			{
-				cout << "The image " << filename << " has the size different from the first image size. Skipping the pair\n";
-				break;
-			}
-			bool found = false;
-			vector<Point2f>& corners = imagePoints[k][j];
-			for (int scale = 1; scale <= maxScale; scale++)
-			{
-				Mat timg;
-				if (scale == 1)
-					timg = img;
-				else
-					resize(img, timg, Size(), scale, scale);
-				found = findChessboardCorners(timg, boardSize, corners,
-					CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_NORMALIZE_IMAGE);
-				if (found)
-				{
-					if (scale > 1)
-					{
-						Mat cornersMat(corners);
-						cornersMat *= 1. / scale;
-					}
-					break;
-				}
-			}
-			if (displayCorners)
-			{
-				cout << filename << endl;
-				Mat cimg, cimg1;
-				cvtColor(img, cimg, COLOR_GRAY2BGR);
-				drawChessboardCorners(cimg, boardSize, corners, found);
-				double sf = 640. / MAX(img.rows, img.cols);
-				resize(cimg, cimg1, Size(), sf, sf);
-				imshow("corners", cimg1);
-				char c = (char)waitKey(500);
-				if (c == 27 || c == 'q' || c == 'Q') //Allow ESC to quit
-					exit(-1);
-			}
-			else
-				putchar('.');
-			if (!found)
-				break;
-			cornerSubPix(img, corners, Size(11, 11), Size(-1, -1),
-				TermCriteria(TermCriteria::COUNT + TermCriteria::EPS,
-					30, 0.01));
-		}
-		if (k == 2)
-		{
-			goodImageList.push_back(imagelist[i * 2]);
-			goodImageList.push_back(imagelist[i * 2 + 1]);
-			j++;
-		}
-	}
-	cout << j << " pairs have been successfully detected.\n";
-	nimages = j;
-	if (nimages < 2)
-	{
-		cout << "Error: too little pairs to run the calibration\n";
-		return;
-	}
-
-	imagePoints[0].resize(nimages);
-	imagePoints[1].resize(nimages);
-	objectPoints.resize(nimages);
-
-	for (i = 0; i < nimages; i++)
-	{
-		for (j = 0; j < boardSize.height; j++)
-			for (k = 0; k < boardSize.width; k++)
-				objectPoints[i].push_back(Point3f(k*squareSize, j*squareSize, 0));
-	}
-
-	cout << "Running stereo calibration ...\n";
-
-	Mat cameraMatrix[2], distCoeffs[2];
-	cameraMatrix[0] = initCameraMatrix2D(objectPoints, imagePoints[0], imageSize, 0);
-	cameraMatrix[1] = initCameraMatrix2D(objectPoints, imagePoints[1], imageSize, 0);
-	Mat R, T, E, F;
-
-	double rms = stereoCalibrate(objectPoints, imagePoints[0], imagePoints[1],
-		cameraMatrix[0], distCoeffs[0],
-		cameraMatrix[1], distCoeffs[1],
-		imageSize, R, T, E, F,
-		CALIB_FIX_ASPECT_RATIO +
-		CALIB_ZERO_TANGENT_DIST +
-		CALIB_USE_INTRINSIC_GUESS +
-		CALIB_SAME_FOCAL_LENGTH +
-		CALIB_RATIONAL_MODEL +
-		CALIB_FIX_K3 + CALIB_FIX_K4 + CALIB_FIX_K5,
-		TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 100, 1e-5));
-	cout << "done with RMS error=" << rms << endl;
-
-	// CALIBRATION QUALITY CHECK
-	// because the output fundamental matrix implicitly
-	// includes all the output information,
-	// we can check the quality of calibration using the
-	// epipolar geometry constraint: m2^t*F*m1=0
-	double err = 0;
-	int npoints = 0;
-	vector<Vec3f> lines[2];
-	for (i = 0; i < nimages; i++)
-	{
-		int npt = (int)imagePoints[0][i].size();
-		Mat imgpt[2];
-		for (k = 0; k < 2; k++)
-		{
-			imgpt[k] = Mat(imagePoints[k][i]);
-			undistortPoints(imgpt[k], imgpt[k], cameraMatrix[k], distCoeffs[k], Mat(), cameraMatrix[k]);
-			computeCorrespondEpilines(imgpt[k], k + 1, F, lines[k]);
-		}
-		for (j = 0; j < npt; j++)
-		{
-			double errij = fabs(imagePoints[0][i][j].x*lines[1][j][0] +
-				imagePoints[0][i][j].y*lines[1][j][1] + lines[1][j][2]) +
-				fabs(imagePoints[1][i][j].x*lines[0][j][0] +
-					imagePoints[1][i][j].y*lines[0][j][1] + lines[0][j][2]);
-			err += errij;
-		}
-		npoints += npt;
-	}
-	cout << "average epipolar err = " << err / npoints << endl;
-
-	// save intrinsic parameters
-	FileStorage fs("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::WRITE);
-	if (fs.isOpened())
-	{
-		fs << "M1" << cameraMatrix[0] << "D1" << distCoeffs[0] <<
-			"M2" << cameraMatrix[1] << "D2" << distCoeffs[1];
-		fs.release();
-	}
-	else
-		cout << "Error: can not save the intrinsic parameters\n";
-
-	Mat R1, R2, P1, P2, Q;
-	Rect validRoi[2];
-
-	stereoRectify(cameraMatrix[0], distCoeffs[0],
-		cameraMatrix[1], distCoeffs[1],
-		imageSize, R, T, R1, R2, P1, P2, Q,
-		0, 1, imageSize, &validRoi[0], &validRoi[1]);
-
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml", FileStorage::WRITE);
-	if (fs.isOpened())
-	{
-		fs << "R" << R << "T" << T << "R1" << R1 << "R2" << R2 << "P1" << P1 << "P2" << P2 << "Q" << Q;
-		fs.release();
-	}
-	else
-		cout << "Error: can not save the extrinsic parameters\n";
-
-	Mat _M1;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
-	
-
-	// OpenCV can handle left-right
-	// or up-down camera arrangements
-	bool isVerticalStereo = fabs(P2.at<double>(1, 3)) > fabs(P2.at<double>(0, 3));
-
-	// COMPUTE AND DISPLAY RECTIFICATION
-	if (!showRectified)
-		return;
-
+	//Массив для перестроения изображения
 	Mat rmap[2][2];
-	// IF BY CALIBRATED (BOUGUET'S METHOD)
-	if (useCalibrated)
-	{
-		// we already computed everything
-	}
-	// OR ELSE HARTLEY'S METHOD
-	else
-		// use intrinsic parameters of each camera, but
-		// compute the rectification transformation directly
-		// from the fundamental matrix
-	{
-		vector<Point2f> allimgpt[2];
-		for (k = 0; k < 2; k++)
-		{
-			for (i = 0; i < nimages; i++)
-				std::copy(imagePoints[k][i].begin(), imagePoints[k][i].end(), back_inserter(allimgpt[k]));
-		}
-		F = findFundamentalMat(Mat(allimgpt[0]), Mat(allimgpt[1]), FM_8POINT, 0, 0);
-		Mat H1, H2;
-		stereoRectifyUncalibrated(Mat(allimgpt[0]), Mat(allimgpt[1]), F, imageSize, H1, H2, 3);
 
-		R1 = cameraMatrix[0].inv()*H1*cameraMatrix[0];
-		R2 = cameraMatrix[1].inv()*H2*cameraMatrix[1];
-		P1 = cameraMatrix[0];
-		P2 = cameraMatrix[1];
-	}
+	//
+	Rect validRoi[2];
 	
-	//Precompute maps for cv::remap()
+	//Режим работы калибровки
+	int mode = DETECTION;
 
-	initUndistortRectifyMap(cameraMatrix[0], distCoeffs[0], R1, P1, imageSize, CV_32F, rmap[0][0], rmap[0][1]);
-	initUndistortRectifyMap(cameraMatrix[1], distCoeffs[1], R2, P2, imageSize, CV_32F, rmap[1][0], rmap[1][1]);
+	//Получение колличества углов по ширине и высоте
+	cout << "Type number of corners width and heigth\n";
+	cin >> board_size.width >> board_size.height;
+
+	//Массив для хранения углов шахматной доски
+	vector<vector<Point2f>> imagePoints[2];
 
 
-	Mat canvas;
-	double sf;
-	if (!isVerticalStereo)
-	{
-		sf = 600. / MAX(imageSize.width, imageSize.height);
-		w = cvRound(imageSize.width*sf);
-		h = cvRound(imageSize.height*sf);
-		canvas.create(h, w * 2, CV_8UC3);
-	}
-	else
-	{
-		sf = 300. / MAX(imageSize.width, imageSize.height);
-		w = cvRound(imageSize.width*sf);
-		h = cvRound(imageSize.height*sf);
-		canvas.create(h * 2, w, CV_8UC3);
-	}
+	//создание окна отображения
+	namedWindow(WINDOW_NAME, 1);
 
-	for (i = 0; i < nimages; i++)
-	{
-		for (k = 0; k < 2; k++)
-		{
-			Mat img = imread(goodImageList[i * 2 + k], 0), rimg, cimg;
-			remap(img, rimg, rmap[k][0], rmap[k][1], INTER_LINEAR);
-			cvtColor(rimg, cimg, COLOR_GRAY2BGR);
-			Mat canvasPart = !isVerticalStereo ? canvas(Rect(w*k, 0, w, h)) : canvas(Rect(0, h*k, w, h));
-			resize(cimg, canvasPart, canvasPart.size(), 0, 0, INTER_AREA);
-			if (useCalibrated)
-			{
-				Rect vroi(cvRound(validRoi[k].x*sf), cvRound(validRoi[k].y*sf),
-					cvRound(validRoi[k].width*sf), cvRound(validRoi[k].height*sf));
-				rectangle(canvasPart, vroi, Scalar(0, 0, 255), 3, 8);
-			}
+	//Флаг, показывающий, нашлись ли углы
+	bool found_left = false, found_right = false;
+
+	for (int i = 0;;i++) {
+
+		//Захват изображений с камеры
+		camera_left >> img_left;
+		camera_right >> img_right;
+		img_size = img_left.size();
+		//Создание области отображения двух изображений
+		display_area.create(Size(img_left.cols + img_right.cols,img_left.rows), img_left.type());
+
+		//Присваивание области отображения левому и правому снимку
+		Mat left_area = (display_area)(Rect(0, 0, img_left.cols, img_left.rows));
+		Mat right_area = (display_area)(Rect(img_left.cols, 0, img_right.cols, img_right.rows));
+
+		//Создание массивов для хранения изображений в градациях серого
+		Mat gray_left, gray_right;
+
+		//Создание массива для хранения параметров каждой камеры
+		Mat camera_matrix_left,camera_matrix_right, dist_coeffs[2];
+
+		//Конвертация в градации серого
+		cvtColor(img_left, gray_left, COLOR_BGR2GRAY);
+		cvtColor(img_right, gray_right, COLOR_BGR2GRAY);
+
+		//Хранилище координат углов
+		vector<Point2f> point_buf_left;
+		vector<Point2f> point_buf_right;
+
+		//Поиск углов на шахматной доске
+		found_left = findChessboardCorners(gray_left, board_size, point_buf_left,
+			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+		found_right = findChessboardCorners(gray_right, board_size, point_buf_right,
+			CALIB_CB_ADAPTIVE_THRESH | CALIB_CB_FAST_CHECK | CALIB_CB_NORMALIZE_IMAGE);
+
+		//Поиск углов на шахматной доске на уровне суб-пикселей
+		if (found_left&&found_right) {
+			cornerSubPix(gray_left, point_buf_left, Size(11, 11), Size(-1, -1),
+				TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
+			cornerSubPix(gray_right, point_buf_right, Size(11, 11), Size(-1, -1),
+				TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
 		}
 
-		if (!isVerticalStereo)
-			for (j = 0; j < canvas.rows; j += 16)
-				line(canvas, Point(0, j), Point(canvas.cols, j), Scalar(0, 255, 0), 1, 8);
-		else
-			for (j = 0; j < canvas.cols; j += 16)
-				line(canvas, Point(j, 0), Point(j, canvas.rows), Scalar(0, 255, 0), 1, 8);
-		imshow("rectified", canvas);
-		char c = (char)waitKey();
-		if (c == 27 || c == 'q' || c == 'Q')
+		//
+		if (mode == CAPTURING&&found_left&&found_right) {
+			imagePoints[0].push_back(point_buf_left);
+			imagePoints[1].push_back(point_buf_right);
+		}
+
+		//Отображение углов на изображении
+		if (found_left&&found_right) {
+			drawChessboardCorners(img_left, board_size, point_buf_left, found_left);
+			drawChessboardCorners(img_right, board_size, point_buf_right, found_right);
+		}
+
+		//Вывод сообщения на экран
+		string msg = mode == CAPTURING ? "100/100" :
+			mode == CALIBRATED ? "Calibrated" : "Press 'g' to start";
+		if (mode == CAPTURING)
 		{
-			destroyWindow("corners");
-			destroyWindow("rectified");
+			msg = format("%d/%d", (int)imagePoints[0].size(), number_of_good_boards);
+		}
+		putText(img_left, msg, Point(150, 400), 1, 1, Scalar(255, 0, 0), 2);
+		putText(img_right, msg, Point(150, 400), 1, 1, Scalar(255, 0, 0), 2);
+
+
+
+		if (mode == CAPTURING&&imagePoints[0].size() == number_of_good_boards) {
+			vector<vector<Point3f>> objectPoints(number_of_good_boards);
+
+			//
+			for (int i = 0;i < number_of_good_boards;++i)
+				for (int j = 0;j < board_size.height;++j)
+					for (int k = 0;k < board_size.width;++k)
+						objectPoints[i].push_back(Point3f(k*square_size, j*square_size, 0));
+
+			//
+			imagePoints[0].resize(number_of_good_boards);
+			imagePoints[1].resize(number_of_good_boards);
+
+			//
+			camera_matrix_left = initCameraMatrix2D(objectPoints, imagePoints[0], img_size, 0);
+			camera_matrix_right = initCameraMatrix2D(objectPoints, imagePoints[1], img_size, 0);
+			//Инициализация матриц вращения, сдвига систем координат, существенная и фундаментальная
+			Mat R, T, E, F;
+
+			//Минимизация и расчет среднеквадратической ошибки перепроецирования точек
+			double rms = stereoCalibrate(objectPoints, imagePoints[0], imagePoints[1],
+				camera_matrix_left, dist_coeffs[0],
+				camera_matrix_right, dist_coeffs[1],
+				img_size, R, T, E, F,
+				CALIB_FIX_ASPECT_RATIO +
+				CALIB_ZERO_TANGENT_DIST +
+				CALIB_USE_INTRINSIC_GUESS +
+				CALIB_SAME_FOCAL_LENGTH +
+				CALIB_RATIONAL_MODEL +
+				CALIB_FIX_K3 + CALIB_FIX_K4 + CALIB_FIX_K5,
+				TermCriteria(TermCriteria::COUNT + TermCriteria::EPS, 100, 1e-5));
+
+			//Вывод минимальной ошибки
+			cout << "Done with RMS error =" << rms << endl;
+
+
+			//
+			double err = 0;
+			int npoints = 0;
+			vector<Vec3f> lines[2];
+			for (int i = 0; i < number_of_good_boards; i++)
+			{
+				int npt = (int)imagePoints[0][i].size();
+				Mat imgpt_left,imgpt_right;
+
+					imgpt_left = Mat(imagePoints[0][i]);
+					undistortPoints(imgpt_left, imgpt_left, camera_matrix_left, dist_coeffs[0], Mat(), camera_matrix_left);
+					computeCorrespondEpilines(imgpt_left, 1, F, lines[0]);
+					imgpt_right = Mat(imagePoints[1][i]);
+					undistortPoints(imgpt_right, imgpt_right, camera_matrix_right, dist_coeffs[1], Mat(), camera_matrix_right);
+					computeCorrespondEpilines(imgpt_right, 2, F, lines[1]);
+
+				for (int j = 0; j < npt; j++)
+				{
+					double errij = fabs(imagePoints[0][i][j].x*lines[1][j][0] +
+						imagePoints[0][i][j].y*lines[1][j][1] + lines[1][j][2]) +
+						fabs(imagePoints[1][i][j].x*lines[0][j][0] +
+							imagePoints[1][i][j].y*lines[0][j][1] + lines[0][j][2]);
+					err += errij;
+				}
+				npoints += npt;
+			}
+			cout << "average epipolar err = " << err / npoints << endl;
+
+			//
+			Mat R1, R2, P1, P2, Q;
+			stereoRectify(camera_matrix_left, dist_coeffs[0],
+				camera_matrix_right, dist_coeffs[1],
+				img_size, R, T, R1, R2, P1, P2, Q,
+				0, 1, img_size, &validRoi[0], &validRoi[1]);
+			
+			//
+			initUndistortRectifyMap(camera_matrix_left, dist_coeffs[0], R1, P1, img_size, CV_16SC2, rmap[0][0], rmap[0][1]);
+			initUndistortRectifyMap(camera_matrix_right, dist_coeffs[1], R2, P2, img_size, CV_16SC2, rmap[1][0], rmap[1][1]);
+
+			//Функция сохранения параметров
+			SaveParams(camera_matrix_left,camera_matrix_right,dist_coeffs[0],dist_coeffs[1],R,T,R1,R2,P1,P2,Q);
+			
+			//Переключение режима
+			mode = CALIBRATED;
+		}
+
+		char c = waitKey(50);
+		if (c == 27) {
+			destroyWindow(WINDOW_NAME);
 			break;
 		}
+
+		if (c == 'g')
+		{
+			mode = CAPTURING;
+		}
+
+		if (c == 'u'&&mode == CALIBRATED) {
+			remap(img_left, img_left, rmap[0][0], rmap[0][1],INTER_LINEAR);
+			remap(img_right, img_right, rmap[1][0], rmap[1][1], INTER_LINEAR);
+			for (int i = 0;i < img_left.rows;i += 16) {
+				line(img_left, Point(0, i), Point(img_left.cols, i), Scalar(0, 255, 0), 1, 8);
+				line(img_right, Point(0, i), Point(img_right.cols, i), Scalar(0, 255, 0), 1, 8);
+			}
+			rectangle(img_left, validRoi[0], Scalar(255, 0, 0), 2, 8);
+			rectangle(img_right, validRoi[1], Scalar(255, 0, 0), 2, 8);
+		}
+
+		img_left.copyTo(left_area);
+		img_right.copyTo(right_area);
+
+		imshow(WINDOW_NAME, display_area);
 	}
 }
 
@@ -391,8 +281,8 @@ static void GetCropedImage(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2,
 	}
 
 	//Получение координаты оптической оси
-	cx = &M1.at<double>(0, 2);
-	cy = &M1.at<double>(1, 2);
+	*cx = M1.at<double>(0, 2);
+	*cy = M1.at<double>(1, 2);
 
 	//Вычисление областей для работы с изображением
 	stereoRectify(M1, D1, M2, D2, imgsize, R, T, R1, R2, P1, P2, Q, CALIB_ZERO_DISPARITY, -1, imgsize, roi1, roi2);
@@ -451,18 +341,20 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int prefilter_cap,
 			vdisp.convertTo(*disp, CV_8U, 1 / 16.);
 }
 
-static void FindCircles(Mat capture, vector<Vec3f> *circles, int threshold, 
+static void FindCircles(Mat capture, Mat *canny_pic, vector<Vec3f> *circles, int threshold, 
 						int threshold_of_storadge, int min_dist, int min_radius, 
 						int max_radius, int blur)
 {
 	Mat blured;
+	
 	//Сглаживание изображения, для уменьшения шума на изображении
 	medianBlur(capture, blured, blur*2+1);
-	//Canny(blured, capture1, 100, 100);
+	Canny(blured, *canny_pic, threshold+50, threshold_of_storadge+100);
+
 	//Поиск окружностей на изображении
 	HoughCircles(blured, *circles, HOUGH_GRADIENT,
 		1, 
-		threshold, 
+		threshold+50, 
 		threshold_of_storadge+100, 
 		min_dist, 
 		max_radius, 
@@ -477,15 +369,16 @@ int main(int argc, char** argv)
 	const string postfix = ".png";
 	Vec3f coords_and_radius;
 	Rect roi1, roi2;
-	double Z=0, baseline=atof(argv[2]), focal_length=4.1, sencor_elem_size=5.5, X=0, Y=0,cx=0,cy=0;
+	double Z=0, baseline=atof(argv[2]), focal_length=5.5, sencor_size_horizontal=5.5, sencor_size_vertical =2.75, X=0, Y=0,cx=0,cy=0;
 	double fps = atof(argv[1]);
 	GUI gui;
 	
 	//Инициализация камер
-	VideoCapture cap1(0);
+	VideoCapture cap1(2);
 	if (!cap1.isOpened())
 		return -1;
-	VideoCapture cap2(1);
+
+	VideoCapture cap2(0);
 	if (!cap2.isOpened())
 		return -2;
 
@@ -494,7 +387,7 @@ int main(int argc, char** argv)
 	cin >> a;
 	if (a == 'Y')
 	{
-		StereoCallibration(cap1,cap2);
+		Calibration(cap1,cap2,12);
 	}
 
 	//Настройка частоты захвата изображения
@@ -508,61 +401,82 @@ int main(int argc, char** argv)
 	vector<Vec3f> circles1, circles2;
 
 	bool setup_needed = true;
-	const int image_height = 480;
+	const int image_heigth = 480;
 	const int image_width = 640;
-	Mat frame1{ image_width,image_height,CV_16SC3 }, 
-				frame2{ frame1 }, gframe1{ frame1 }, 
-				gframe2{ frame1 }, disp{frame1};
+	Mat frame_left{ image_heigth,image_width,CV_16SC3 }, 
+				frame_right{ frame_left }, gframe_left{ frame_left }, 
+				gframe_right{ frame_left }, disp{ frame_left }, canny_pic{ frame_left };
 
-	gui.StartSetup(&gframe1, &gframe2, &disp);
+	gui.StartSetup(&gframe_left, &gframe_right, &disp, &canny_pic);
 
 	// Основной цикл
 	for (;;)
 	{
-		cap1 >> frame1;
-		cap2 >> frame2;
+		cap1 >> frame_left;
+		cap2 >> frame_right;
 
-		//frame1 = imread(img_prefix + "1_2" + postfix, 1);
-		//frame2 = imread(img_prefix + "2_2" + postfix, 1);
+		//frame_left = imread(img_prefix + "1_2" + postfix, 1);
+		//frame_right = imread(img_prefix + "2_2" + postfix, 1);
 
 		//Создания изображений
-		gframe1.create(480, 640, CV_8UC1);
-		gframe2.create(480, 640, CV_8UC1);
+		gframe_left.create(480, 640, CV_8U);
+		gframe_right.create(480, 640, CV_8U);
 
 		//Конвертация изображений в градации серого
-		cvtColor(frame1, gframe1, CV_BGR2GRAY);
-		cvtColor(frame2, gframe2, CV_BGR2GRAY);
+		cvtColor(frame_left, gframe_left, CV_BGR2GRAY);
+		cvtColor(frame_right, gframe_right, CV_BGR2GRAY);
 
 		//Нормализация изображений
-		unsigned int bright_of_frame1 = 0, bright_of_frame2 = 0;
-		double difference_of_averadge_bright = 0;
-		for (int i = 0;i<640;i++)
-			for (int j = 0;j < 480;j++)
-			{
-				bright_of_frame1 += gframe1.at<uchar>(j, i);
-				bright_of_frame2 += gframe2.at<uchar>(j, i);
-			}
-		difference_of_averadge_bright = bright_of_frame1 / bright_of_frame2+0.0001;
-		for (int i = 0; i < 640;i++)
-			for (int j = 0; j < 480;j++)
-				gframe1.at<uchar>(j, i)= gframe1.at<uchar>(j, i)*difference_of_averadge_bright;
+		//Получение гистограм правого и левого изображения
+		/*MatND ghist_left,ghist_right;
+		int hist_size = 256;
+		float range[] = { 0, 256 };
+		const float* hist_range = { range };
+		bool uniform = true;
+		bool accumulate = false;
+		int hist_width = 512, hist_heigth = 400, bin_w = round((double)hist_width / hist_size);
 
+*/
+		//calcHist(&gframe_left, 1, 0, Mat(), ghist_left, 1, &hist_size, &hist_range,true,false);
+		//calcHist(&gframe_right, 1, 0, Mat(), ghist_right, 1, &hist_size, &hist_range, true, false);
+		//
+		//		
+		//Mat histogram_left(hist_heigth, hist_width, CV_8U),histogram_right(hist_heigth, hist_width, CV_8U);
+		//
+		//normalize(ghist_left, ghist_left, 0, histogram_left.rows, NORM_MINMAX, -1, Mat());
+		//normalize(ghist_right, ghist_right, 0, histogram_right.rows, NORM_MINMAX, -1, Mat());
+		//
+		//for (int i = 1;i < hist_size;i++) {
+		//	line(histogram_left, Point(bin_w*(i - 1), hist_heigth - round(ghist_left.at<float>(i - 1))),
+		//		Point(bin_w*(i), hist_heigth - round(ghist_left.at<float>(i))),
+		//		Scalar(0, 255, 255), 2, 8, 0);
+		//	line(histogram_right, Point(bin_w*(i - 1), hist_heigth - round(ghist_right.at<float>(i - 1))),
+		//						Point(bin_w*(i), hist_heigth - round(ghist_right.at<float>(i))),
+		//						Scalar(0, 255, 255), 2, 8, 0);
+		//}
+		
+		//Нормализация гистограм
+		equalizeHist(gframe_left, gframe_left);
+		equalizeHist(gframe_right, gframe_right);
+		
+
+		
 		//Исправление изображений
-		GetCropedImage(&gframe1, &gframe2, &roi1, &roi2, gframe1.size(),&cx,&cy);
+		GetCropedImage(&gframe_left, &gframe_right, &roi1, &roi2, gframe_left.size(),&cx,&cy);
 		
 		//Уменьшение шума на изображениях
-		medianBlur(gframe1, gframe1, 3);
-		medianBlur(gframe2, gframe2, 3);
+		medianBlur(gframe_left, gframe_left, 3);
+		medianBlur(gframe_right, gframe_right, 3);
 
 		//Поиск маркеров
-		FindCircles(gframe1, &gui.circles, 
+		FindCircles(gframe_left, &canny_pic, &gui.circles, 
 					gui.threshold, 
 					gui.threshold_of_storadge, 
 					gui.mindist, 
 					gui.minrad, 
 					gui.maxrad, 
 					gui.blur);
-		/*FindCircles(gframe2, &circles2, 
+		/*FindCircles(gframe_right, &circles2, 
 					gui.threshold,
 					gui.threshold_of_storadge,
 					gui.mindist,
@@ -577,7 +491,15 @@ int main(int argc, char** argv)
 			//Подбор параметров на одном изображении для наилучшего отображения карты глубины
 			for (;;) {
 
-				StereoMatch(gframe1, gframe2, &disp, gui.prefilter_cap,
+				FindCircles(gframe_left, &canny_pic, &gui.circles,
+					gui.threshold,
+					gui.threshold_of_storadge,
+					gui.mindist,
+					gui.minrad,
+					gui.maxrad,
+					gui.blur);
+
+				StereoMatch(gframe_left, gframe_right, &disp, gui.prefilter_cap,
 													 gui.block_size,
 													 gui.texture_threshold,
 													 gui.num_disparities,
@@ -585,7 +507,7 @@ int main(int argc, char** argv)
 				
 				gui.UpdateSetup();
 				
-				// .....
+				// Закрытие настроечных окон и настройка основного режима
 				if (waitKey(60) == 27) {
 					setup_needed = false;
 					gui.EndSetup();
@@ -594,8 +516,8 @@ int main(int argc, char** argv)
 				}
 			}
 
-		// ...
-		StereoMatch(gframe1, gframe2, &disp, gui.prefilter_cap,
+		// Вычисление карты глубины для основного режима
+		StereoMatch(gframe_left, gframe_right, &disp, gui.prefilter_cap,
 											 gui.block_size,
 											 gui.texture_threshold,
 											 gui.num_disparities,
@@ -603,20 +525,21 @@ int main(int argc, char** argv)
 
 
 		//Вычисление поля зрения камеры
-		double field_of_view = 2 * atan(sencor_elem_size / 2 * focal_length);
-
+		double fov_horizontal = 2 * atan(sencor_size_horizontal / 2 * focal_length);
+		double fov_vertical = 2 * atan(sencor_size_vertical / 2 * focal_length);
+		double average_value_of_dispar=0;
 		// Подсчет координат на изображении
 		for (size_t i = 0; i < gui.circles.size(); i++)
 		{
-			//Отрисовка окружностей
-			//coords_and_radius = circles1[i];
-			//circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 0, 255), 3, LINE_AA);
-			//circle(disp, Point(coords_and_radius[0], coords_and_radius[1]), coords_and_radius[2], Scalar(0, 255, 0), 3, LINE_AA);
-			
+			for (int j = 3;j > -2;j--)
+				for (int k = 3;k > -2;k--)
+					average_value_of_dispar += disp.at<uchar>(gui.circles[i][1]-k, gui.circles[i][0] - j);
+			average_value_of_dispar = average_value_of_dispar / 25;
+
 			//Вычисление расстояний
-			Z = ((baseline*focal_length) / (sencor_elem_size*disp.at<uchar>(gui.circles[i][0], gui.circles[i][1])));
-			X= 2 * sin(field_of_view / 2)*Z / gframe1.cols*(gui.circles[i][0] -cx);
-			Y = 2 * sin(field_of_view / 2)*Z / gframe1.rows*(gui.circles[i][1] - cy);
+			gui.z = ((baseline*focal_length) *1000/ (sencor_size_horizontal*average_value_of_dispar));
+			gui.y = 2 * sin(fov_vertical / 2)*gui.z / gframe_left.rows*(gui.circles[i][1] - cy);
+			gui.x = 2 * sin(fov_horizontal / 2)*gui.z / gframe_left.cols*(gui.circles[i][0] - cx);
 		}
 
 		//Отображение полученных изображений
