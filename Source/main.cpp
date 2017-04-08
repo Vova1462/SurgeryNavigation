@@ -4,25 +4,27 @@
 #include <iostream>
 #include <iterator> 
 #include <opencv2\opencv.hpp>
+#include<time.h>
+
 #include"GUI.h"
 
 using namespace std;
 using namespace cv;
 
 //static bool readStringList(const string& filename, vector<string>& l)
-{
-	l.resize(0);
-	FileStorage fs(filename, FileStorage::READ);
-	if (!fs.isOpened())
-		return false;
-	FileNode n = fs.getFirstTopLevelNode();
-	if (n.type() != FileNode::SEQ)
-		return false;
-	FileNodeIterator it = n.begin(), it_end = n.end();
-	for (; it != it_end; ++it)
-		l.push_back((string)*it);
-	return true;
-}
+//{
+//	l.resize(0);
+//	FileStorage fs(filename, FileStorage::READ);
+//	if (!fs.isOpened())
+//		return false;
+//	FileNode n = fs.getFirstTopLevelNode();
+//	if (n.type() != FileNode::SEQ)
+//		return false;
+//	FileNodeIterator it = n.begin(), it_end = n.end();
+//	for (; it != it_end; ++it)
+//		l.push_back((string)*it);
+//	return true;
+//}
 
 enum { DETECTION = 0, CAPTURING = 1, CALIBRATED = 2 };
 
@@ -49,7 +51,8 @@ void SaveParams(Mat &M1, Mat &M2, Mat &D1, Mat &D2, Mat &R, Mat &T, Mat &R1, Mat
 static void Calibration(VideoCapture camera_left, VideoCapture camera_right, int number_of_good_boards) {
 
 	String WINDOW_NAME = "Window calibration";
-
+	clock_t prevTimestamp = 0;
+	int delay = 1000;
 	double square_size = 0.1;
 	Size board_size, img_size;
 	//Массивы для хранения изображения
@@ -119,10 +122,11 @@ static void Calibration(VideoCapture camera_left, VideoCapture camera_right, int
 				TermCriteria(TermCriteria::EPS + TermCriteria::COUNT, 30, 0.1));
 		}
 
-		//
-		if (mode == CAPTURING&&found_left&&found_right) {
+		//Занесение координат углов
+		if (mode == CAPTURING&&found_left&&found_right&&clock()-prevTimestamp>delay*1e-3*CLOCKS_PER_SEC) {
 			imagePoints[0].push_back(point_buf_left);
 			imagePoints[1].push_back(point_buf_right);
+			prevTimestamp = clock();
 		}
 
 		//Отображение углов на изображении
@@ -141,6 +145,21 @@ static void Calibration(VideoCapture camera_left, VideoCapture camera_right, int
 		putText(img_left, msg, Point(150, 400), 1, 1, Scalar(255, 0, 0), 2);
 		putText(img_right, msg, Point(150, 400), 1, 1, Scalar(255, 0, 0), 2);
 
+		if (mode == CALIBRATED) {
+			remap(img_left, img_left, rmap[0][0], rmap[0][1], INTER_LINEAR);
+			remap(img_right, img_right, rmap[1][0], rmap[1][1], INTER_LINEAR);
+			for (int i = 0;i < img_left.rows;i += 16) {
+				line(img_left, Point(0, i), Point(img_left.cols, i), Scalar(0, 255, 0), 1, 8);
+				line(img_right, Point(0, i), Point(img_right.cols, i), Scalar(0, 255, 0), 1, 8);
+			}
+			rectangle(img_left, validRoi[0], Scalar(255, 0, 0), 2, 8);
+			rectangle(img_right, validRoi[1], Scalar(255, 0, 0), 2, 8);
+		}
+
+		img_left.copyTo(left_area);
+		img_right.copyTo(right_area);
+
+		imshow(WINDOW_NAME, display_area);
 
 
 		if (mode == CAPTURING&&imagePoints[0].size() == number_of_good_boards) {
@@ -152,13 +171,14 @@ static void Calibration(VideoCapture camera_left, VideoCapture camera_right, int
 					for (int k = 0;k < board_size.width;++k)
 						objectPoints[i].push_back(Point3f(k*square_size, j*square_size, 0));
 
-			//
+			//Переопределение массивов с координатами
 			imagePoints[0].resize(number_of_good_boards);
 			imagePoints[1].resize(number_of_good_boards);
 
 			//
 			camera_matrix_left = initCameraMatrix2D(objectPoints, imagePoints[0], img_size, 0);
 			camera_matrix_right = initCameraMatrix2D(objectPoints, imagePoints[1], img_size, 0);
+			
 			//Инициализация матриц вращения, сдвига систем координат, существенная и фундаментальная
 			Mat R, T, E, F;
 
@@ -235,22 +255,6 @@ static void Calibration(VideoCapture camera_left, VideoCapture camera_right, int
 		{
 			mode = CAPTURING;
 		}
-
-		if (c == 'u'&&mode == CALIBRATED) {
-			remap(img_left, img_left, rmap[0][0], rmap[0][1],INTER_LINEAR);
-			remap(img_right, img_right, rmap[1][0], rmap[1][1], INTER_LINEAR);
-			for (int i = 0;i < img_left.rows;i += 16) {
-				line(img_left, Point(0, i), Point(img_left.cols, i), Scalar(0, 255, 0), 1, 8);
-				line(img_right, Point(0, i), Point(img_right.cols, i), Scalar(0, 255, 0), 1, 8);
-			}
-			rectangle(img_left, validRoi[0], Scalar(255, 0, 0), 2, 8);
-			rectangle(img_right, validRoi[1], Scalar(255, 0, 0), 2, 8);
-		}
-
-		img_left.copyTo(left_area);
-		img_right.copyTo(right_area);
-
-		imshow(WINDOW_NAME, display_area);
 	}
 }
 
@@ -260,7 +264,7 @@ static void GetCropedImage(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2,
 	Mat R1, R2, R, T, P1, P2, M1, M2, D1, D2, Q, rect_map[2][2], img1rect, img2rect;
 	//Загрузка из YAML фалов внутренних и внешних параметров камеры, и координат для исправления изображений, полученных на этапе калибровки
 	FileStorage fs;
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\extrinsics.yml", FileStorage::READ);
+	fs.open("extrinsics.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
 		fs["R"] >> R;
@@ -271,7 +275,7 @@ static void GetCropedImage(Mat *capture1, Mat *capture2, Rect *roi1, Rect *roi2,
 		fs["P2"] >> P2;
 		fs["Q"] >> Q;
 	}
-	fs.open("C:\\dev\\MyProjects\\SurgeryNavigation\\Data\\intrinsics.yml", FileStorage::READ);
+	fs.open("intrinsics.yml", FileStorage::READ);
 	if (fs.isOpened())
 	{
 		fs["M1"] >> M1;
@@ -321,7 +325,7 @@ static void StereoMatch(Mat capture1,Mat capture2, Mat *disp, int prefilter_cap,
 	Size imgsize = capture1.size();
 	Mat vdisp(capture1.rows, capture1.cols, CV_16U);
 
-	Ptr<StereoBM> bm = StereoBM::create(64, 21);
+	Ptr<StereoBM> bm = StereoBM::create(500, 1);
 
 			if (prefilter_cap > 0)
 				bm->setPreFilterCap(prefilter_cap);
@@ -352,7 +356,7 @@ static void FindCircles(Mat capture, Mat *canny_pic, vector<Vec3f> *circles, int
 	Canny(blured, *canny_pic, threshold+50, threshold_of_storadge+100);
 
 	//Поиск окружностей на изображении
-	HoughCircles(blured, *circles, HOUGH_GRADIENT,
+	HoughCircles(*canny_pic, *circles, HOUGH_GRADIENT,
 		1, 
 		threshold+50, 
 		threshold_of_storadge+100, 
@@ -387,7 +391,7 @@ int main(int argc, char** argv)
 	cin >> a;
 	if (a == 'Y')
 	{
-		Calibration(cap1,cap2,12);
+		Calibration(cap1,cap2,25);
 	}
 
 	//Настройка частоты захвата изображения
@@ -435,8 +439,7 @@ int main(int argc, char** argv)
 		bool uniform = true;
 		bool accumulate = false;
 		int hist_width = 512, hist_heigth = 400, bin_w = round((double)hist_width / hist_size);
-
-*/
+		*/
 		//calcHist(&gframe_left, 1, 0, Mat(), ghist_left, 1, &hist_size, &hist_range,true,false);
 		//calcHist(&gframe_right, 1, 0, Mat(), ghist_right, 1, &hist_size, &hist_range, true, false);
 		//
@@ -458,8 +461,6 @@ int main(int argc, char** argv)
 		//Нормализация гистограм
 		equalizeHist(gframe_left, gframe_left);
 		equalizeHist(gframe_right, gframe_right);
-		
-
 		
 		//Исправление изображений
 		GetCropedImage(&gframe_left, &gframe_right, &roi1, &roi2, gframe_left.size(),&cx,&cy);
@@ -483,14 +484,11 @@ int main(int argc, char** argv)
 					gui.minrad,
 					gui.maxrad,
 					gui.blur);*/
-				
-
-
+		
 		//Поиск карты неравенства
 		if (setup_needed)
 			//Подбор параметров на одном изображении для наилучшего отображения карты глубины
 			for (;;) {
-
 				FindCircles(gframe_left, &canny_pic, &gui.circles,
 					gui.threshold,
 					gui.threshold_of_storadge,
@@ -498,7 +496,7 @@ int main(int argc, char** argv)
 					gui.minrad,
 					gui.maxrad,
 					gui.blur);
-
+				
 				StereoMatch(gframe_left, gframe_right, &disp, gui.prefilter_cap,
 													 gui.block_size,
 													 gui.texture_threshold,
@@ -515,7 +513,6 @@ int main(int argc, char** argv)
 					break;
 				}
 			}
-
 		// Вычисление карты глубины для основного режима
 		StereoMatch(gframe_left, gframe_right, &disp, gui.prefilter_cap,
 											 gui.block_size,
@@ -546,7 +543,7 @@ int main(int argc, char** argv)
 		gui.UpdateMainMode();
 
 		//Ожидание нажатия клавиши
-		char c = waitKey(100);
+		char c = waitKey(5);
 		if (c == 27) break;
 	}
 

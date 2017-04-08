@@ -37,25 +37,25 @@ public:
 	//Константы
 	cv::String NAME_OF_MAIN_WINDOW = "Main Window";
 	cv::String NAME_OF_OPTION_WINDOW = "Options";
-	cv::String NAME_OF_wORKING_WINDOW = "Working Window";
+	cv::String NAME_OF_WORKING_WINDOW = "Working Window";
 	
 	//Массив окружностей
 	std::vector <cv::Vec3f> circles;
 
 	//Параметры для поиска окружностей
-	int threshold =			    100;
-	int threshold_of_storadge = 25;
+	int threshold =			    56;
+	int threshold_of_storadge = 2;
 	int mindist	  =				13;
-	int minrad	  =				18;
-	int maxrad	  =				9;
-	int blur	  =				2;
+	int minrad	  =				14;
+	int maxrad	  =				5;
+	int blur	  =				5;
 	
 	//Параметры для вычисления карты неравенства
-	int prefilter_cap	=	15;
-	int	block_size		=	 18;
-	int	texture_threshold =	 14;
-	int	num_disparities	=	16;
-	int	uniqueness_ratio=	 0;
+	int prefilter_cap		=30;
+	int	block_size			=14;
+	int	texture_threshold	=7;
+	int	num_disparities		=16;
+	int	uniqueness_ratio	=0;
 
 	//Координаты положения маркера
 	double x = 0, y = 0, z = 0;

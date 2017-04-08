@@ -18,7 +18,7 @@ void GUI::StartSetup(cv::Mat *left_p, cv::Mat *right_p, cv::Mat *disp_map, cv::M
 	const int margin = 10;
 
 	//Размер экрана
-	Size display_area_size(left_pic->cols + right_pic->cols,
+	Size display_area_size(left_pic->cols + right_pic->cols+100,
 		left_pic->rows + right_pic->rows);
 
 	//Область для отображения изображений и параметров
@@ -26,10 +26,12 @@ void GUI::StartSetup(cv::Mat *left_p, cv::Mat *right_p, cv::Mat *disp_map, cv::M
 	display_area.create(display_area_size, CV_8UC1);
 	
 	//Области для отображения изображений внутри основного окна
-	left_area  = (display_area)(Rect(0, 0, 493, 339));
-	right_area = (display_area)(Rect(left_p->cols, 0, 493, 339));
-	disp_area  = (display_area)(Rect(0, left_p->rows, 493, 339));
-	canny_area = (display_area)(Rect(left_p->cols, left_p->rows, 493, 339));
+	left_area  = (display_area)(Rect(0, 0, 589, 454));
+	right_area = (display_area)(Rect(left_p->cols, 0, 589, 454));
+	disp_area  = (display_area)(Rect(0, left_p->rows, 589, 454));
+	canny_area = (display_area)(Rect(left_p->cols, left_p->rows, 589, 454));
+
+
 	
 	//Создание окна
 	namedWindow(NAME_OF_MAIN_WINDOW, WINDOW_NORMAL);
@@ -69,7 +71,10 @@ void GUI::UpdateSetup() {
 
 	Mat copy_left_img;
 	left_pic->copyTo(copy_left_img);
-
+	for (int i = 0;i < copy_left_img.rows;i += 16) {
+		line(copy_left_img, Point(0, i), Point(copy_left_img.cols, i), Scalar(0, 255, 0), 1, 8);
+		line(*right_pic, Point(0, i), Point(right_pic->cols, i), Scalar(0, 255, 0), 1, 8);
+	}
 	//Отрисовка окружностей
 	for (int i = 0;i < circles.size();i++)
 		circle(copy_left_img,Point(circles[i][0],circles[i][1]),circles[i][2],Scalar(255,255,255),3,LINE_AA);
@@ -95,7 +100,7 @@ void GUI::EndSetup()
 
 void GUI::StartMainMode() {
 
-	namedWindow(NAME_OF_wORKING_WINDOW, WINDOW_NORMAL);
+	namedWindow(NAME_OF_WORKING_WINDOW, WINDOW_NORMAL);
 }
 
 void GUI::UpdateMainMode()
@@ -120,7 +125,7 @@ void GUI::UpdateMainMode()
 	canny_pic->copyTo(canny_area);
 
 	//Отображение основной области в окне
-	imshow(NAME_OF_wORKING_WINDOW, display_area);
+	imshow(NAME_OF_WORKING_WINDOW, display_area);
 }
 
 
